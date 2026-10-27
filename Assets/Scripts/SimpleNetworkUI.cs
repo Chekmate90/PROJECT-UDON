@@ -14,6 +14,9 @@ public class SimpleNetworkUI : MonoBehaviour
     [SerializeField] private string targetIpAddress = "127.0.0.1";
     [SerializeField] private ushort connectionPort = 7777;
 
+    private NetworkManager subscribedNetworkManager;
+    private string connectionStatus = "Waiting - start as Host or Client";
+
     private void Start()
     {
         if (hostButton != null)
@@ -30,31 +33,47 @@ public class SimpleNetworkUI : MonoBehaviour
         {
             ipInputField.text = targetIpAddress;
         }
+
+        SubscribeToNetworkEvents();
+    }
+
+    private void Update()
+    {
+        SubscribeToNetworkEvents();
+    }
+
+    private void OnDestroy()
+    {
+        UnsubscribeFromNetworkEvents();
     }
 
     public void StartHostGame()
     {
-        if (NetworkManager.Singleton == null)
+        if (!TryGetNetworkManager(out NetworkManager networkManager))
         {
-            Debug.LogError("No NetworkManager found in scene!");
             return;
         }
 
-        var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-        if (transport != null)
+        UnityTransport transport = networkManager.GetComponent<UnityTransport>();
+        if (transport == null)
         {
-            // Bind to all local adapters
-            transport.SetConnectionData("0.0.0.0", connectionPort);
+            SetStatus("FAILED - Unity Transport is missing", true);
+            return;
         }
 
-        NetworkManager.Singleton.StartHost();
+        transport.SetConnectionData("0.0.0.0", connectionPort);
+        SetStatus($"Starting Host on port {connectionPort}...", false);
+
+        if (!networkManager.StartHost())
+        {
+            SetStatus("FAILED - StartHost returned false; check Console", true);
+        }
     }
 
     public void StartClientGame()
     {
-        if (NetworkManager.Singleton == null)
+        if (!TryGetNetworkManager(out NetworkManager networkManager))
         {
-            Debug.LogError("No NetworkManager found in scene!");
             return;
         }
 
@@ -62,38 +81,157 @@ public class SimpleNetworkUI : MonoBehaviour
             ? ipInputField.text
             : targetIpAddress;
 
-        var transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-        if (transport != null)
+        UnityTransport transport = networkManager.GetComponent<UnityTransport>();
+        if (transport == null)
         {
-            transport.SetConnectionData(ipToConnect, connectionPort);
+            SetStatus("FAILED - Unity Transport is missing", true);
+            return;
         }
 
-        NetworkManager.Singleton.StartClient();
+        transport.SetConnectionData(ipToConnect, connectionPort);
+        SetStatus($"Connecting to {ipToConnect}:{connectionPort}...", false);
+
+        if (!networkManager.StartClient())
+        {
+            SetStatus("FAILED - StartClient returned false; check Console", true);
+        }
     }
 
-    // On-screen buttons rendered automatically in the Game view
     private void OnGUI()
     {
-        if (NetworkManager.Singleton == null) return;
-        if (NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer) return;
+        GUILayout.BeginArea(new Rect(20, 20, 320, 250), GUI.skin.box);
+        GUILayout.Label("LAN Boxing Multiplayer");
+        GUILayout.Label($"Status: {connectionStatus}", GUILayout.MinHeight(36));
 
-        GUILayout.BeginArea(new Rect(20, 20, 240, 160), GUI.skin.box);
-        GUILayout.Label("<b>LAN Boxing Multiplayer</b>");
-
-        if (GUILayout.Button("Start Host (Player 1)", GUILayout.Height(35)))
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager == null)
         {
-            StartHostGame();
+            GUILayout.Label("NetworkManager not found");
+            GUILayout.EndArea();
+            return;
         }
 
-        GUILayout.Space(8);
-        GUILayout.Label("Connect to Host IP:");
-        targetIpAddress = GUILayout.TextField(targetIpAddress, GUILayout.Height(25));
-
-        if (GUILayout.Button("Join Client (Player 2)", GUILayout.Height(35)))
+        if (networkManager.IsListening)
         {
-            StartClientGame();
+            string role = networkManager.IsServer
+                ? (networkManager.IsClient ? "HOST" : "SERVER")
+                : "CLIENT";
+            int connectedPlayers = networkManager.ConnectedClientsIds.Count;
+            GUILayout.Label($"Role: {role} | Client ID: {networkManager.LocalClientId}");
+            GUILayout.Label($"Players connected: {connectedPlayers}");
+        }
+        else
+        {
+            GUILayout.Label("Connect to Host IP:");
+            targetIpAddress = GUILayout.TextField(targetIpAddress, GUILayout.Height(25));
+
+            if (GUILayout.Button("Start Host (Player 1)", GUILayout.Height(32)))
+            {
+                StartHostGame();
+            }
+
+            if (GUILayout.Button("Join Client (Player 2)", GUILayout.Height(32)))
+            {
+                StartClientGame();
+            }
         }
 
         GUILayout.EndArea();
+    }
+
+    private bool TryGetNetworkManager(out NetworkManager networkManager)
+    {
+        networkManager = NetworkManager.Singleton;
+        if (networkManager != null)
+        {
+            SubscribeToNetworkEvents();
+            return true;
+        }
+
+        SetStatus("FAILED - No NetworkManager found in scene", true);
+        return false;
+    }
+
+    private void SubscribeToNetworkEvents()
+    {
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager == subscribedNetworkManager)
+        {
+            return;
+        }
+
+        UnsubscribeFromNetworkEvents();
+        subscribedNetworkManager = networkManager;
+
+        if (subscribedNetworkManager == null)
+        {
+            return;
+        }
+
+        subscribedNetworkManager.OnClientConnectedCallback += OnClientConnected;
+        subscribedNetworkManager.OnClientDisconnectCallback += OnClientDisconnected;
+        subscribedNetworkManager.OnServerStarted += OnServerStarted;
+        subscribedNetworkManager.OnTransportFailure += OnTransportFailure;
+    }
+
+    private void UnsubscribeFromNetworkEvents()
+    {
+        if (subscribedNetworkManager == null)
+        {
+            return;
+        }
+
+        subscribedNetworkManager.OnClientConnectedCallback -= OnClientConnected;
+        subscribedNetworkManager.OnClientDisconnectCallback -= OnClientDisconnected;
+        subscribedNetworkManager.OnServerStarted -= OnServerStarted;
+        subscribedNetworkManager.OnTransportFailure -= OnTransportFailure;
+        subscribedNetworkManager = null;
+    }
+
+    private void OnClientConnected(ulong clientId)
+    {
+        NetworkManager networkManager = subscribedNetworkManager;
+        if (networkManager == null)
+        {
+            return;
+        }
+
+        string role = networkManager.IsServer ? "HOST" : "CLIENT";
+        string message = clientId == networkManager.LocalClientId
+            ? $"CONNECTED as {role} (Client ID {clientId})"
+            : $"Client {clientId} connected ({networkManager.ConnectedClientsIds.Count} players)";
+        SetStatus(message, false);
+    }
+
+    private void OnClientDisconnected(ulong clientId)
+    {
+        NetworkManager networkManager = subscribedNetworkManager;
+        string message = networkManager != null && clientId == networkManager.LocalClientId
+            ? "DISCONNECTED from session"
+            : $"Client {clientId} disconnected";
+        SetStatus(message, true);
+    }
+
+    private void OnServerStarted()
+    {
+        SetStatus($"HOST RUNNING on port {connectionPort}", false);
+    }
+
+    private void OnTransportFailure()
+    {
+        SetStatus("TRANSPORT FAILURE - check address, port, and Console", true);
+    }
+
+    private void SetStatus(string message, bool isError)
+    {
+        connectionStatus = message;
+        if (isError)
+        {
+            Debug.LogError($"[Network Debug] {message}");
+        }
+        else
+        {
+            Debug.Log($"[Network Debug] {message}");
+        }
     }
 }

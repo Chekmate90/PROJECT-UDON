@@ -72,6 +72,9 @@ namespace XRMultiplayer
             m_FingerCurlLeft = new NetworkList<float>(new List<float>(), NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
             m_FingerCurlRight = new NetworkList<float>(new List<float>(), NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
+            if (m_HandCurler == null)
+                return;
+
             for (int i = 0; i < m_HandCurler.Length; i++)
             {
                 m_handTrackedStartPose[i].position = m_HandCurler[i].transform.localPosition;
@@ -94,7 +97,7 @@ namespace XRMultiplayer
             try
             {
                 base.OnDestroy();
-                if (IsOwner)
+                if (IsOwner && m_XRModalityManager != null)
                 {
                     m_XRModalityManager.trackedHandModeStarted.RemoveListener(SwapToHands);
                     m_XRModalityManager.motionControllerModeStarted.RemoveListener(SwapToControllers);
@@ -139,7 +142,7 @@ namespace XRMultiplayer
             if (IsOwner)
             {
                 m_XROrigin = FindFirstObjectByType<XROrigin>();
-                if (m_XROrigin.TryGetComponent(out m_XRModalityManager))
+                if (m_XROrigin != null && m_XROrigin.TryGetComponent(out m_XRModalityManager))
                 {
                     SetupLocalHands();
                 }
@@ -195,6 +198,13 @@ namespace XRMultiplayer
         void SetupLocalFingerReferences()
         {
             XRInputModalityManager modalityMangager = FindFirstObjectByType<XRInputModalityManager>();
+
+            if (modalityMangager == null)
+            {
+                m_IsInitialized.Value = true;
+                ChangeControllerType(XRInputModalityManager.InputMode.MotionController);
+                return;
+            }
 
             // Early out if hands are not setup
             if (modalityMangager.leftHand == null)

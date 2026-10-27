@@ -123,6 +123,7 @@ GameObject:
   m_Component:
   - component: {fileID: 7784919235243739335}
   - component: {fileID: 7950800726555858119}
+  - component: {fileID: 7482910365128471938}
   m_Layer: 0
   m_Name: Head
   m_TagString: Untagged
@@ -193,6 +194,27 @@ MonoBehaviour:
   Interpolate: 1
   SlerpPosition: 0
   isServerAuthoritative: 0
+--- !u!135 &7482910365128471938
+SphereCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4257447556974277867}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Radius: 0.12
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1 &5018554818948276343
 GameObject:
   m_ObjectHideFlags: 0
@@ -286,7 +308,8 @@ GameObject:
   - component: {fileID: 3240456498834066550}
   - component: {fileID: 4588994832583027022}
   - component: {fileID: 8435302620866516779}
-  - component: {fileID: 2722608077457501448}
+  - component: {fileID: 7482910365128471939}
+  - component: {fileID: 7482910365128471940}
   m_Layer: 0
   m_Name: XRI_Network_Player_Avatar
   m_TagString: Untagged
@@ -338,6 +361,46 @@ MonoBehaviour:
   AutoObjectParentSync: 1
   SyncOwnerTransformWhenParented: 1
   AllowOwnerToParent: 0
+--- !u!114 &7482910365128471939
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5358844088564582620}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: be7ce319ffe78bb489fff3054be22775, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxHealth: 100
+  minPunchSpeed: 1.2
+  maxPunchSpeed: 5
+  damageMultiplier: 8
+  hitCooldown: 0.25
+--- !u!136 &7482910365128471940
+CapsuleCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5358844088564582620}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 2
+  m_Radius: 0.3
+  m_Height: 0.9
+  m_Direction: 1
+  m_Center: {x: 0, y: 0.9, z: 0}
 --- !u!114 &4588994832583027022
 MonoBehaviour:
   m_ObjectHideFlags: 0

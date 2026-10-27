@@ -1,7 +1,7 @@
 using Unity.Netcode;
 using UnityEngine;
 
-public class GloveHitbox : NetworkBehaviour
+public class GloveHitbox : MonoBehaviour
 {
     [Header("Punch Settings")]
     [Tooltip("Minimum punch velocity (m/s) required to register damage")]
@@ -11,7 +11,22 @@ public class GloveHitbox : NetworkBehaviour
 
     private Vector3 previousPosition;
     private float currentPunchSpeed;
-    private float lastHitTime;
+    private float lastHitTime = float.NegativeInfinity;
+
+    private void Awake()
+    {
+        Collider gloveCollider = GetComponent<Collider>();
+        gloveCollider.isTrigger = true;
+
+        Rigidbody gloveBody = GetComponent<Rigidbody>();
+        if (gloveBody == null)
+        {
+            gloveBody = gameObject.AddComponent<Rigidbody>();
+        }
+
+        gloveBody.isKinematic = true;
+        gloveBody.useGravity = false;
+    }
 
     private void Start()
     {
@@ -30,25 +45,19 @@ public class GloveHitbox : NetworkBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        // Only the owner of this controller calculates their own hits to eliminate local input lag
-        if (!IsOwner) return;
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager == null || !networkManager.IsClient || !networkManager.IsListening) return;
 
-        // Prevent multiple hit registrations in the same swing
         if (Time.time - lastHitTime < hitCooldown) return;
 
-        // Check if we struck an opponent's head/torso trigger
-        if (other.CompareTag("Hurtbox") && currentPunchSpeed >= minPunchSpeed)
+        if (currentPunchSpeed >= minPunchSpeed)
         {
             PlayerHealth targetHealth = other.GetComponentInParent<PlayerHealth>();
 
-            // Confirm the target is an opponent, not our own avatar
-            if (targetHealth != null && targetHealth.OwnerClientId != OwnerClientId)
+            if (targetHealth != null && targetHealth.IsSpawned && targetHealth.OwnerClientId != networkManager.LocalClientId)
             {
                 lastHitTime = Time.time;
-                int damage = Mathf.RoundToInt(currentPunchSpeed * damageMultiplier);
-
-                Debug.Log($"Punch landed at {currentPunchSpeed:F2} m/s dealing {damage} damage!");
-                targetHealth.ApplyDamageServerRpc(damage);
+                targetHealth.RequestPunchServerRPC(currentPunchSpeed);
             }
         }
     }
