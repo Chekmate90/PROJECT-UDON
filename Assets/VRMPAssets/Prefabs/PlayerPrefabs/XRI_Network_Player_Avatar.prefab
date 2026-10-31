@@ -310,6 +310,7 @@ GameObject:
   - component: {fileID: 8435302620866516779}
   - component: {fileID: 7482910365128471939}
   - component: {fileID: 7482910365128471940}
+  - component: {fileID: 9022243617094287421}
   m_Layer: 0
   m_Name: XRI_Network_Player_Avatar
   m_TagString: Untagged
@@ -1366,3 +1367,23 @@ Transform:
     type: 3}
   m_PrefabInstance: {fileID: 8792743807233795412}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &9022243617094287421
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5358844088564582620}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 417bbf4ab4304626b10750c300051a51, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  headPose: {fileID: 7784919235243739335}
+  leftHandPose: {fileID: 1523342480417178809}
+  rightHandPose: {fileID: 908897919254213233}
+  fallbackHeadHeight: 1.6
+  fallbackPlayerSpacing: 1.5
+  fallbackHandSideOffset: 0.25
+  fallbackHandHeightOffset: -0.35
+  fallbackHandForwardOffset: 0.35

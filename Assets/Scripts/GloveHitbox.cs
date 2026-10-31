@@ -5,8 +5,6 @@ public class GloveHitbox : MonoBehaviour
 {
     [Header("Punch Settings")]
     [Tooltip("Minimum punch velocity (m/s) required to register damage")]
-    [SerializeField] private float minPunchSpeed = 1.2f;
-    [SerializeField] private float damageMultiplier = 8.0f;
     [SerializeField] private float hitCooldown = 0.25f;
 
     private Vector3 previousPosition;
@@ -41,24 +39,42 @@ public class GloveHitbox : MonoBehaviour
             currentPunchSpeed = (transform.position - previousPosition).magnitude / Time.deltaTime;
         }
         previousPosition = transform.position;
+
+        PlayerHealth playerHealth = GetComponentInParent<PlayerHealth>();
+        if ((playerHealth != null && playerHealth.IsOwner) || CompareTag("Glove"))
+        {
+            PunchDebugDisplay.UpdateSpeed(currentPunchSpeed);
+        }
     }
 
     private void OnTriggerEnter(Collider other)
     {
-        NetworkManager networkManager = NetworkManager.Singleton;
-        if (networkManager == null || !networkManager.IsClient || !networkManager.IsListening) return;
-
-        if (Time.time - lastHitTime < hitCooldown) return;
-
-        if (currentPunchSpeed >= minPunchSpeed)
+        PlayerHealth targetHealth = other.GetComponentInParent<PlayerHealth>();
+        if (targetHealth == null)
         {
-            PlayerHealth targetHealth = other.GetComponentInParent<PlayerHealth>();
-
-            if (targetHealth != null && targetHealth.IsSpawned && targetHealth.OwnerClientId != networkManager.LocalClientId)
-            {
-                lastHitTime = Time.time;
-                targetHealth.RequestPunchServerRPC(currentPunchSpeed);
-            }
+            return;
         }
+
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager == null || !networkManager.IsClient || !networkManager.IsListening)
+        {
+            PunchDebugDisplay.Show($"Contact detected: YES | Speed: {currentPunchSpeed:F2} m/s\nDamage: 0 | Network unavailable");
+            return;
+        }
+
+        if (!targetHealth.IsSpawned || targetHealth.OwnerClientId == networkManager.LocalClientId)
+        {
+            return;
+        }
+
+        if (Time.time - lastHitTime < hitCooldown)
+        {
+            PunchDebugDisplay.Show($"Contact detected: YES | Speed: {currentPunchSpeed:F2} m/s\nDamage: 0 | Local cooldown");
+            return;
+        }
+
+        lastHitTime = Time.time;
+        PunchDebugDisplay.Show($"Contact detected: YES | Speed: {currentPunchSpeed:F2} m/s\nDamage: waiting for server...");
+        targetHealth.ReportPunchAttemptServerRpc(currentPunchSpeed);
     }
 }

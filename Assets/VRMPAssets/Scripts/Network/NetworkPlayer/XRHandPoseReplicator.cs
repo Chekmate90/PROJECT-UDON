@@ -48,6 +48,8 @@ namespace XRMultiplayer
         HandFidelityOption[] m_LocalHandFidelityOptions;
 
         public XRInputModalityManager.InputMode trackingType { get => m_TrackingType.Value; }
+        public Transform LeftHandOrigin => m_LeftHandOrigin;
+        public Transform RightHandOrigin => m_RightHandOrigin;
         readonly NetworkVariable<XRInputModalityManager.InputMode> m_TrackingType = new(XRInputModalityManager.InputMode.None, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
         XRInputModalityManager m_XRModalityManager;
@@ -490,14 +492,19 @@ namespace XRMultiplayer
 
         void GetNetworkCurlLimited()
         {
+            if (m_HandCurler == null || m_HandCurler.Length < 2)
+                return;
+
             for (int i = 0; i < 3; i++)
             {
-                m_HandCurler[0].SetCurl(i, m_FingerCurlLeft[i]);
+                if (m_FingerCurlLeft != null && i < m_FingerCurlLeft.Count)
+                    m_HandCurler[0].SetCurl(i, m_FingerCurlLeft[i]);
             }
 
             for (int i = 0; i < 3; i++)
             {
-                m_HandCurler[1].SetCurl(i, m_FingerCurlRight[i]);
+                if (m_FingerCurlRight != null && i < m_FingerCurlRight.Count)
+                    m_HandCurler[1].SetCurl(i, m_FingerCurlRight[i]);
             }
         }
 
@@ -559,6 +566,16 @@ namespace XRMultiplayer
 
         void SetLocalNetworkFingerCurl(int hand, int finger, float value)
         {
+            if (!IsOwner || finger < 0 || finger >= 3)
+                return;
+
+            NetworkList<float> fingerCurl = hand == 0 ? m_FingerCurlLeft : m_FingerCurlRight;
+            if (fingerCurl == null)
+                return;
+
+            while (fingerCurl.Count <= finger)
+                fingerCurl.Add(0.0f);
+
             if (hand == 0)
             {
                 if (Mathf.Abs(m_FingerCurlLeft[finger] - value) > m_MinUpdateDelta)
@@ -600,7 +617,11 @@ namespace XRMultiplayer
                 m_RightHandOrigin = m_RightHandTransformReference;
             }
 
-            XRINetworkPlayer.LocalPlayer.SetHandOrigins(m_LeftHandOrigin, m_RightHandOrigin);
+            // This replicator can also be used by lightweight player prefabs
+            // that do not include XRINetworkPlayer. The avatar pose driver
+            // handles hand transforms for those prefabs.
+            if (XRINetworkPlayer.LocalPlayer != null)
+                XRINetworkPlayer.LocalPlayer.SetHandOrigins(m_LeftHandOrigin, m_RightHandOrigin);
         }
 
         void ResetHandsToStart()
