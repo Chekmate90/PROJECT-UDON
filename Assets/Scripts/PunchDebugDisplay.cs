@@ -10,6 +10,15 @@ public class PunchDebugDisplay : MonoBehaviour
     private Text readout;
     private float punchSpeed;
     private string punchResult = "Contact: waiting... | Damage: --";
+    private string healthStatus = "Health: waiting for network player...";
+
+    public static void SetHealthStatus(string message)
+    {
+        EnsureInstance();
+        if (instance == null) return;
+        instance.healthStatus = message;
+        instance.Refresh();
+    }
 
     public static void Show(string message)
     {
@@ -126,7 +135,7 @@ public class PunchDebugDisplay : MonoBehaviour
     {
         if (readout != null)
         {
-            readout.text = $"PUNCH DEBUG\nSpeed: {punchSpeed:F2} m/s\n{punchResult}";
+            readout.text = $"PUNCH DEBUG\nSpeed: {punchSpeed:F2} m/s\n{punchResult}\n{healthStatus}";
         }
     }
 }
