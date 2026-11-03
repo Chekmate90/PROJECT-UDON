@@ -4,11 +4,17 @@ using UnityEngine;
 public class GloveHitbox : MonoBehaviour
 {
     [Header("Punch Settings")]
-    [Tooltip("Minimum punch velocity (m/s) required to register damage")]
+    [Tooltip("Minimum forward punch velocity (m/s) required to register damage")]
+    [SerializeField] private float minPunchSpeed = 1.8f;
+    [Tooltip("Maximum distance from glove center to the target body center")]
+    [SerializeField] private float maxHitDistance = 0.65f;
+    [Tooltip("Minimum amount of movement toward the target (0 to 1)")]
+    [SerializeField, Range(0f, 1f)] private float minForwardAlignment = 0.65f;
     [SerializeField] private float hitCooldown = 0.25f;
 
     private Vector3 previousPosition;
     private float currentPunchSpeed;
+    private Vector3 currentVelocity;
     private float lastHitTime = float.NegativeInfinity;
 
     private void Awake()
@@ -36,7 +42,8 @@ public class GloveHitbox : MonoBehaviour
         // Track glove velocity in world meters per second
         if (Time.deltaTime > 0f)
         {
-            currentPunchSpeed = (transform.position - previousPosition).magnitude / Time.deltaTime;
+            currentVelocity = (transform.position - previousPosition) / Time.deltaTime;
+            currentPunchSpeed = currentVelocity.magnitude;
         }
         previousPosition = transform.position;
 
@@ -67,6 +74,24 @@ public class GloveHitbox : MonoBehaviour
             return;
         }
 
+        Vector3 toTarget = targetHealth.transform.position - transform.position;
+        float targetDistance = toTarget.magnitude;
+        if (targetDistance > maxHitDistance)
+        {
+            PunchDebugDisplay.Show($"Contact detected: YES | Reach: {targetDistance:F2} m\nDamage: 0 | Out of reach");
+            return;
+        }
+
+        float forwardSpeed = targetDistance > 0.001f
+            ? Vector3.Dot(currentVelocity, toTarget / targetDistance)
+            : 0f;
+        float forwardAlignment = currentPunchSpeed > 0.001f ? forwardSpeed / currentPunchSpeed : 0f;
+        if (forwardSpeed < minPunchSpeed || forwardAlignment < minForwardAlignment)
+        {
+            PunchDebugDisplay.Show($"Contact detected: YES | Forward: {forwardSpeed:F2} m/s\nDamage: 0 | Not a punch");
+            return;
+        }
+
         if (Time.time - lastHitTime < hitCooldown)
         {
             PunchDebugDisplay.Show($"Contact detected: YES | Speed: {currentPunchSpeed:F2} m/s\nDamage: 0 | Local cooldown");
@@ -75,6 +100,6 @@ public class GloveHitbox : MonoBehaviour
 
         lastHitTime = Time.time;
         PunchDebugDisplay.Show($"Contact detected: YES | Speed: {currentPunchSpeed:F2} m/s\nDamage: waiting for server...");
-        targetHealth.ReportPunchAttemptServerRpc(currentPunchSpeed);
+        targetHealth.ReportPunchAttemptServerRpc(forwardSpeed, targetDistance);
     }
 }
