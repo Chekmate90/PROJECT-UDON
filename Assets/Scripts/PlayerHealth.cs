@@ -13,8 +13,12 @@ public class PlayerHealth : NetworkBehaviour
     [SerializeField] private int maxHealth = 100;
     [SerializeField] private float minPunchSpeed = 1.2f;
     [SerializeField] private float maxPunchSpeed = 5f;
-    [SerializeField] private float damageMultiplier = 8f;
+    [SerializeField] private float damageMultiplier = 2f;
     [SerializeField] private float hitCooldown = 0.25f;
+    [SerializeField] private float comboResetTime = 1.25f;
+    [SerializeField] private float comboHit1Multiplier = 1.2f;
+    [SerializeField] private float comboHit2Multiplier = 1.25f;
+    [SerializeField] private float comboHit3Multiplier = 1.33f;
     [SerializeField] private float bodyHeight = 1.8f;
     [SerializeField] private float bodyRadius = 0.32f;
 
@@ -40,6 +44,7 @@ public class PlayerHealth : NetworkBehaviour
     private readonly List<Text> healthLabels = new();
 
     private readonly Dictionary<ulong,float> lastHitTimes = new();
+    private readonly Dictionary<ulong,int> attackerComboCounts = new();
     private XRHandPoseReplicator localHandPoseReplicator;
     private Transform previousLeftHandOrigin;
     private Transform previousRightHandOrigin;
@@ -484,8 +489,6 @@ public class PlayerHealth : NetworkBehaviour
             return;
         }
 
-        lastHitTimes[attackerClientId] = currentTime;
-
         if (currentHealth.Value <= 0)
         {
             PunchDebugClientRpc(attackerClientId, reportedPunchSpeed, 0, "BLOCKED: target is knocked out");
@@ -506,12 +509,25 @@ public class PlayerHealth : NetworkBehaviour
             return;
         }
 
-        int damage = Mathf.RoundToInt(reportedPunchSpeed*damageMultiplier);
+        int comboCount = 1;
+        if (attackerComboCounts.TryGetValue(attackerClientId, out int previousComboCount) &&
+            lastHitTimes.TryGetValue(attackerClientId, out float previousHitTime) &&
+            currentTime - previousHitTime <= comboResetTime)
+        {
+            comboCount = previousComboCount >= 3 ? 1 : previousComboCount + 1;
+        }
+
+        attackerComboCounts[attackerClientId] = comboCount;
+        float comboMultiplier = comboCount == 1 ? comboHit1Multiplier :
+            comboCount == 2 ? comboHit2Multiplier : comboHit3Multiplier;
+        int damage = Mathf.RoundToInt(reportedPunchSpeed * damageMultiplier * comboMultiplier);
+        lastHitTimes[attackerClientId] = currentTime;
         int previousHealth = currentHealth.Value;
 
         currentHealth.Value = Mathf.Max(0, currentHealth.Value - damage);
 
-        PunchDebugClientRpc(attackerClientId, reportedPunchSpeed, damage, "DETECTED: server accepted");
+        PunchDebugClientRpc(attackerClientId, reportedPunchSpeed, damage,
+            $"DETECTED: combo {comboCount}/3 ({comboMultiplier:F2}x)");
 
         Debug.Log(
             $"Punch from {attackerClientId}"+$"Damage : {damage} and Health : {previousHealth} ---> {currentHealth.Value}"
