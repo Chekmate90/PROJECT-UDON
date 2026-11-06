@@ -99,7 +99,7 @@ public class PunchDebugDisplay : MonoBehaviour
         canvas.overrideSorting = true;
         canvas.sortingOrder = 100;
 
-        canvasRoot.sizeDelta = new Vector2(720f, 190f);
+        canvasRoot.sizeDelta = new Vector2(560f, 145f);
 
         CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
         scaler.dynamicPixelsPerUnit = 10f;
@@ -111,19 +111,19 @@ public class PunchDebugDisplay : MonoBehaviour
         panelRect.anchorMax = Vector2.one;
         panelRect.offsetMin = Vector2.zero;
         panelRect.offsetMax = Vector2.zero;
-        panelObject.GetComponent<Image>().color = new Color(0.02f, 0.04f, 0.07f, 0.82f);
+        panelObject.GetComponent<Image>().color = new Color(0.035f, 0.05f, 0.075f, 0.9f);
 
         GameObject textObject = new GameObject("Readout", typeof(RectTransform), typeof(Text));
         textObject.transform.SetParent(panelObject.transform, false);
         RectTransform textRect = textObject.GetComponent<RectTransform>();
         textRect.anchorMin = Vector2.zero;
         textRect.anchorMax = Vector2.one;
-        textRect.offsetMin = new Vector2(18f, 12f);
-        textRect.offsetMax = new Vector2(-18f, -12f);
+        textRect.offsetMin = new Vector2(16f, 10f);
+        textRect.offsetMax = new Vector2(-16f, -10f);
 
         readout = textObject.GetComponent<Text>();
         readout.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        readout.fontSize = 38;
+        readout.fontSize = 28;
         readout.alignment = TextAnchor.MiddleLeft;
         readout.horizontalOverflow = HorizontalWrapMode.Wrap;
         readout.verticalOverflow = VerticalWrapMode.Overflow;
@@ -135,7 +135,7 @@ public class PunchDebugDisplay : MonoBehaviour
     {
         if (readout != null)
         {
-            readout.text = $"PUNCH DEBUG\nSpeed: {punchSpeed:F2} m/s\n{punchResult}\n{healthStatus}";
+            readout.text = $"PUNCH STATUS   {punchSpeed:F2} m/s\n{punchResult}\n{healthStatus}";
         }
     }
 }

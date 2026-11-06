@@ -49,6 +49,20 @@ public class GloveHitbox : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
+        TestDummy testDummy = other.GetComponentInParent<TestDummy>();
+        if (testDummy != null)
+        {
+            PlayerHealth attackerHealth = GetComponentInParent<PlayerHealth>();
+            if (attackerHealth != null && !attackerHealth.IsOwner)
+            {
+                return;
+            }
+
+            testDummy.RegisterPunch(currentPunchSpeed);
+            PunchDebugDisplay.Show($"Test dummy contact | Speed: {currentPunchSpeed:F2} m/s");
+            return;
+        }
+
         PlayerHealth targetHealth = other.GetComponentInParent<PlayerHealth>();
         if (targetHealth == null)
         {

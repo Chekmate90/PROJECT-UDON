@@ -16,6 +16,11 @@ public class SimpleNetworkUI : MonoBehaviour
 
     private NetworkManager subscribedNetworkManager;
     private string connectionStatus = "Waiting - start as Host or Client";
+    private GUIStyle panelStyle;
+    private GUIStyle titleStyle;
+    private GUIStyle labelStyle;
+    private GUIStyle statusStyle;
+    private GUIStyle buttonStyle;
 
     private void Start()
     {
@@ -99,14 +104,16 @@ public class SimpleNetworkUI : MonoBehaviour
 
     private void OnGUI()
     {
-        GUILayout.BeginArea(new Rect(20, 20, 320, 250), GUI.skin.box);
-        GUILayout.Label("LAN Boxing Multiplayer");
-        GUILayout.Label($"Status: {connectionStatus}", GUILayout.MinHeight(36));
+        EnsureStyles();
+        GUILayout.BeginArea(new Rect(20, 20, 300, 220), panelStyle);
+        GUILayout.Label("LAN BOXING", titleStyle);
+        GUILayout.Space(4f);
+        GUILayout.Label(connectionStatus, statusStyle, GUILayout.MinHeight(34));
 
         NetworkManager networkManager = NetworkManager.Singleton;
         if (networkManager == null)
         {
-            GUILayout.Label("NetworkManager not found");
+            GUILayout.Label("Network manager unavailable", labelStyle);
             GUILayout.EndArea();
             return;
         }
@@ -117,26 +124,68 @@ public class SimpleNetworkUI : MonoBehaviour
                 ? (networkManager.IsClient ? "HOST" : "SERVER")
                 : "CLIENT";
             int connectedPlayers = networkManager.ConnectedClientsIds.Count;
-            GUILayout.Label($"Role: {role} | Client ID: {networkManager.LocalClientId}");
-            GUILayout.Label($"Players connected: {connectedPlayers}");
+            GUILayout.Space(8f);
+            GUILayout.Label($"SESSION   {role}", labelStyle);
+            GUILayout.Label($"PLAYERS   {connectedPlayers}", labelStyle);
         }
         else
         {
-            GUILayout.Label("Connect to Host IP:");
-            targetIpAddress = GUILayout.TextField(targetIpAddress, GUILayout.Height(25));
+            GUILayout.Label("HOST IP ADDRESS", labelStyle);
+            targetIpAddress = GUILayout.TextField(targetIpAddress, GUILayout.Height(30));
+            GUILayout.Space(8f);
 
-            if (GUILayout.Button("Start Host (Player 1)", GUILayout.Height(32)))
+            if (GUILayout.Button("Start Host", buttonStyle, GUILayout.Height(34)))
             {
                 StartHostGame();
             }
 
-            if (GUILayout.Button("Join Client (Player 2)", GUILayout.Height(32)))
+            if (GUILayout.Button("Join Game", buttonStyle, GUILayout.Height(34)))
             {
                 StartClientGame();
             }
         }
 
         GUILayout.EndArea();
+    }
+
+    private void EnsureStyles()
+    {
+        if (panelStyle != null) return;
+
+        panelStyle = new GUIStyle(GUI.skin.box)
+        {
+            padding = new RectOffset(16, 16, 14, 14),
+            normal = { background = MakeTexture(new Color(0.035f, 0.05f, 0.075f, 0.94f)) }
+        };
+        titleStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 16,
+            fontStyle = FontStyle.Bold,
+            normal = { textColor = Color.white }
+        };
+        labelStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 12,
+            normal = { textColor = new Color(0.78f, 0.84f, 0.92f) }
+        };
+        statusStyle = new GUIStyle(labelStyle)
+        {
+            wordWrap = true,
+            normal = { textColor = new Color(0.45f, 0.85f, 0.68f) }
+        };
+        buttonStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize = 12,
+            fontStyle = FontStyle.Bold
+        };
+    }
+
+    private static Texture2D MakeTexture(Color color)
+    {
+        Texture2D texture = new Texture2D(1, 1);
+        texture.SetPixel(0, 0, color);
+        texture.Apply();
+        return texture;
     }
 
     private bool TryGetNetworkManager(out NetworkManager networkManager)
