@@ -48,10 +48,6 @@ public class PlayerHealth : NetworkBehaviour
     private XRHandPoseReplicator localHandPoseReplicator;
     private Transform previousLeftHandOrigin;
     private Transform previousRightHandOrigin;
-    private Vector3 previousLeftHandPosition;
-    private Vector3 previousRightHandPosition;
-    private bool hasPreviousHandPositions;
-    private string lastTrackingStatus;
     private Transform sceneLeftGlove;
     private Transform sceneRightGlove;
 
@@ -71,14 +67,12 @@ public class PlayerHealth : NetworkBehaviour
         currentHealth.OnValueChanged += OnHealthChanged;
         playerColor.OnValueChanged += OnPlayerColorChanged;
         BuildCapsulePlayer();
-        int handHitboxCount = AddGloveHitboxes();
+        AddGloveHitboxes();
         if (IsOwner)
         {
             localPlayer = this;
             CreateHealthHud();
             localHandPoseReplicator = GetComponent<XRHandPoseReplicator>();
-            PunchDebugDisplay.Show($"Local player ready | Avatar hand hitboxes: {handHitboxCount}\nWaiting for XR hand tracking...");
-            PunchDebugDisplay.SetHealthStatus($"Player {OwnerClientId}: {currentHealth.Value}/{maxHealth} HP");
         }
         if (IsServer)
         {
@@ -104,8 +98,6 @@ public class PlayerHealth : NetworkBehaviour
 
     private void OnHealthChanged(int previousValue, int newValue)
     {
-        Debug.Log($"[Player {OwnerClientId}] Health changed from {previousValue} to {newValue}");
-        PunchDebugDisplay.SetHealthStatus($"Player {OwnerClientId}: {newValue}/{maxHealth} HP");
         RefreshHealthHud();
     }
 
@@ -309,7 +301,6 @@ public class PlayerHealth : NetworkBehaviour
         Transform leftHandOrigin = localHandPoseReplicator != null ? localHandPoseReplicator.LeftHandOrigin : null;
         Transform rightHandOrigin = localHandPoseReplicator != null ? localHandPoseReplicator.RightHandOrigin : null;
 
-        string trackingSource = "network hand tracker";
         bool usingExistingGloveColliders = false;
         if (leftHandOrigin == null && rightHandOrigin == null)
         {
@@ -324,33 +315,24 @@ public class PlayerHealth : NetworkBehaviour
             {
                 leftHandOrigin = modalityManager.leftHand != null ? modalityManager.leftHand.transform : null;
                 rightHandOrigin = modalityManager.rightHand != null ? modalityManager.rightHand.transform : null;
-                trackingSource = "tracked hand anchors";
             }
 
             if (leftHandOrigin == null && rightHandOrigin == null && modalityManager != null)
             {
                 leftHandOrigin = modalityManager.leftController != null ? modalityManager.leftController.transform : null;
                 rightHandOrigin = modalityManager.rightController != null ? modalityManager.rightController.transform : null;
-                trackingSource = "controller transforms";
             }
 
             if (leftHandOrigin == null && rightHandOrigin == null)
             {
                 FindSceneGloves(out leftHandOrigin, out rightHandOrigin);
-                trackingSource = "scene glove colliders";
                 usingExistingGloveColliders = leftHandOrigin != null || rightHandOrigin != null;
             }
         }
 
         if (leftHandOrigin == null && rightHandOrigin == null)
         {
-            ShowTrackingStatus("XR input references unavailable");
             return;
-        }
-
-        if (previousLeftHandOrigin != leftHandOrigin || previousRightHandOrigin != rightHandOrigin)
-        {
-            hasPreviousHandPositions = false;
         }
 
         if (!usingExistingGloveColliders)
@@ -364,30 +346,6 @@ public class PlayerHealth : NetworkBehaviour
             previousRightHandOrigin = rightHandOrigin;
         }
 
-        ShowTrackingStatus($"Tracking: {trackingSource} | Contact: waiting | Damage: --");
-
-        if (!hasPreviousHandPositions || Time.deltaTime <= 0f)
-        {
-            previousLeftHandPosition = leftHandOrigin != null ? leftHandOrigin.position : Vector3.zero;
-            previousRightHandPosition = rightHandOrigin != null ? rightHandOrigin.position : Vector3.zero;
-            hasPreviousHandPositions = true;
-            return;
-        }
-
-        float punchSpeed = 0f;
-        if (leftHandOrigin != null)
-        {
-            punchSpeed = Mathf.Max(punchSpeed, Vector3.Distance(leftHandOrigin.position, previousLeftHandPosition) / Time.deltaTime);
-            previousLeftHandPosition = leftHandOrigin.position;
-        }
-
-        if (rightHandOrigin != null)
-        {
-            punchSpeed = Mathf.Max(punchSpeed, Vector3.Distance(rightHandOrigin.position, previousRightHandPosition) / Time.deltaTime);
-            previousRightHandPosition = rightHandOrigin.position;
-        }
-
-        PunchDebugDisplay.UpdateSpeed(punchSpeed);
     }
 
     private void FindSceneGloves(out Transform leftGlove, out Transform rightGlove)
@@ -417,17 +375,6 @@ public class PlayerHealth : NetworkBehaviour
 
         leftGlove = sceneLeftGlove;
         rightGlove = sceneRightGlove;
-    }
-
-    private void ShowTrackingStatus(string message)
-    {
-        if (lastTrackingStatus == message)
-        {
-            return;
-        }
-
-        lastTrackingStatus = message;
-        PunchDebugDisplay.Show(message);
     }
 
     private static void EnsureTrackedHandHitbox(ref Transform previousOrigin, Transform currentOrigin, string hitboxName)
@@ -485,13 +432,11 @@ public class PlayerHealth : NetworkBehaviour
         float currentTime = Time.time;
         if (lastHitTimes.TryGetValue(attackerClientId, out float lastHitTime) && currentTime - lastHitTime < hitCooldown)
         {
-            PunchDebugClientRpc(attackerClientId, reportedPunchSpeed, 0, "BLOCKED: server cooldown");
             return;
         }
 
         if (currentHealth.Value <= 0)
         {
-            PunchDebugClientRpc(attackerClientId, reportedPunchSpeed, 0, "BLOCKED: target is knocked out");
             return;
         }
 
@@ -499,13 +444,11 @@ public class PlayerHealth : NetworkBehaviour
             float.IsInfinity(reportedPunchSpeed) ||
             reportedPunchSpeed < minPunchSpeed)
         {
-            PunchDebugClientRpc(attackerClientId, reportedPunchSpeed, 0, $"TOO SLOW: minimum {minPunchSpeed:F1} m/s");
             return;
         }
 
         if (reportedPunchSpeed > maxPunchSpeed)
         {
-            PunchDebugClientRpc(attackerClientId, reportedPunchSpeed, 0, $"TOO FAST: maximum {maxPunchSpeed:F1} m/s");
             return;
         }
 
@@ -526,13 +469,6 @@ public class PlayerHealth : NetworkBehaviour
 
         currentHealth.Value = Mathf.Max(0, currentHealth.Value - damage);
 
-        PunchDebugClientRpc(attackerClientId, reportedPunchSpeed, damage,
-            $"DETECTED: combo {comboCount}/3 ({comboMultiplier:F2}x)");
-
-        Debug.Log(
-            $"Punch from {attackerClientId}"+$"Damage : {damage} and Health : {previousHealth} ---> {currentHealth.Value}"
-        );
-
         if (previousHealth > 0 && currentHealth.Value == 0)
         {
             TriggerKnockoutClientRpc();
@@ -540,18 +476,8 @@ public class PlayerHealth : NetworkBehaviour
     }
 
     [ClientRpc]
-    private void PunchDebugClientRpc(ulong attackerClientId, float punchSpeed, int damage, string result)
-    {
-        string speedText = float.IsNaN(punchSpeed) || float.IsInfinity(punchSpeed)
-            ? "invalid"
-            : $"{punchSpeed:F2} m/s";
-        PunchDebugDisplay.Show($"Attacker {attackerClientId} | Speed: {speedText}\nContact: YES | {result} | Damage: {damage}");
-    }
-
-    [ClientRpc]
     private void TriggerKnockoutClientRpc()
     {
-        Debug.Log($"Player {OwnerClientId} was knocked out!");
         // Add sound effects, screen fade, or round-end triggers here
     }
 }

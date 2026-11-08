@@ -40,11 +40,6 @@ public class GloveHitbox : MonoBehaviour
         }
         previousPosition = transform.position;
 
-        PlayerHealth playerHealth = GetComponentInParent<PlayerHealth>();
-        if ((playerHealth != null && playerHealth.IsOwner) || CompareTag("Glove"))
-        {
-            PunchDebugDisplay.UpdateSpeed(currentPunchSpeed);
-        }
     }
 
     private void OnTriggerEnter(Collider other)
@@ -59,7 +54,6 @@ public class GloveHitbox : MonoBehaviour
             }
 
             testDummy.RegisterPunch(currentPunchSpeed);
-            PunchDebugDisplay.Show($"Test dummy contact | Speed: {currentPunchSpeed:F2} m/s");
             return;
         }
 
@@ -72,7 +66,6 @@ public class GloveHitbox : MonoBehaviour
         NetworkManager networkManager = NetworkManager.Singleton;
         if (networkManager == null || !networkManager.IsClient || !networkManager.IsListening)
         {
-            PunchDebugDisplay.Show($"Contact detected: YES | Speed: {currentPunchSpeed:F2} m/s\nDamage: 0 | Network unavailable");
             return;
         }
 
@@ -83,12 +76,10 @@ public class GloveHitbox : MonoBehaviour
 
         if (Time.time - lastHitTime < hitCooldown)
         {
-            PunchDebugDisplay.Show($"Contact detected: YES | Speed: {currentPunchSpeed:F2} m/s\nDamage: 0 | Local cooldown");
             return;
         }
 
         lastHitTime = Time.time;
-        PunchDebugDisplay.Show($"Contact detected: YES | Speed: {currentPunchSpeed:F2} m/s\nDamage: waiting for server...");
         targetHealth.ReportPunchAttemptServerRpc(currentPunchSpeed);
     }
 }

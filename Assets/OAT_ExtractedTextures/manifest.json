@@ -1,0 +1,99 @@
+{
+  "materials": [
+    {
+      "name": "Painted Plaster Wall.001",
+      "base": "painted_plaster_wall_04_color.jpg",
+      "normal": "painted_plaster_wall_04_normal.jpg"
+    },
+    {
+      "name": "Painted Plaster Wall",
+      "base": "painted_plaster_wall_04_color.jpg",
+      "normal": "painted_plaster_wall_04_normal.jpg"
+    },
+    {
+      "name": "Red wood",
+      "base": "wood04_diffuse.jpg",
+      "normal": "wood04_normal_opengl.jpg"
+    },
+    {
+      "name": "Red wood.002",
+      "base": "red wood_Color.jpg",
+      "normal": "red wood_NormalGL.jpg"
+    },
+    {
+      "name": "Pavement tiles.002",
+      "base": "pavement10_diffuse.jpg",
+      "normal": "pavement10_normal_opengl.jpg"
+    },
+    {
+      "name": "Red marble.002",
+      "base": "marble03a_diffuse.jpg",
+      "normal": "marble03_normal_opengl.jpg"
+    },
+    {
+      "name": "Red marble.001",
+      "base": "marble03a_diffuse.jpg",
+      "normal": "marble03_normal_opengl.jpg"
+    },
+    {
+      "name": "Black marble.001",
+      "base": "marble02c_diffuse.jpg",
+      "normal": "marble02_normal_opengl.jpg"
+    },
+    {
+      "name": "Worn Leather (Black Leather)",
+      "base": "Diffuse-Worn Leather Black.jpg",
+      "normal": "Normal-Worn Leather.jpg"
+    },
+    {
+      "name": "Pavement tiles.001",
+      "base": "pavement10_diffuse.jpg",
+      "normal": "pavement10_normal_opengl.jpg"
+    },
+    {
+      "name": "Concrete Material",
+      "base": "Concrete_Basecolor.jpg",
+      "normal": "Concrete_Normal.jpg"
+    },
+    {
+      "name": "Plaster Stucco",
+      "base": "plaster_48_color.jpg",
+      "normal": "plaster_48_normal.jpg"
+    },
+    {
+      "name": "Black marble",
+      "base": "marble02c_diffuse.jpg",
+      "normal": "marble02_normal_opengl.jpg"
+    },
+    {
+      "name": "Matte Black Iron",
+      "base": "3_Color.jpg",
+      "normal": "Metal028_4K-JPG_NormalGL.jpg"
+    },
+    {
+      "name": "Matte Black Iron.001",
+      "base": "3_Color.jpg",
+      "normal": "Metal028_4K-JPG_NormalGL.jpg"
+    },
+    {
+      "name": "Pink and peach marble texture",
+      "base": "map _38__diffuse.jpg",
+      "normal": "map _38__normal.jpg"
+    },
+    {
+      "name": "Plaster Stucco.001",
+      "base": "plaster_48_color.jpg",
+      "normal": "plaster_48_normal.jpg"
+    },
+    {
+      "name": "Sandblasted aluminium",
+      "base": "sandblasted aluminium_BaseColor.jpg",
+      "normal": "sandblasted aluminium_Normal.jpg"
+    },
+    {
+      "name": "Aluminium metal",
+      "base": "metal01_diffuse.jpg",
+      "normal": "metal01_normal_opengl.jpg"
+    }
+  ]
+}

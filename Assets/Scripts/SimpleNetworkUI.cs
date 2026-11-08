@@ -62,16 +62,16 @@ public class SimpleNetworkUI : MonoBehaviour
         UnityTransport transport = networkManager.GetComponent<UnityTransport>();
         if (transport == null)
         {
-            SetStatus("FAILED - Unity Transport is missing", true);
+            SetStatus("FAILED - Unity Transport is missing");
             return;
         }
 
         transport.SetConnectionData("0.0.0.0", connectionPort);
-        SetStatus($"Starting Host on port {connectionPort}...", false);
+        SetStatus($"Starting Host on port {connectionPort}...");
 
         if (!networkManager.StartHost())
         {
-            SetStatus("FAILED - StartHost returned false; check Console", true);
+            SetStatus("FAILED - StartHost returned false; check Console");
         }
     }
 
@@ -89,16 +89,16 @@ public class SimpleNetworkUI : MonoBehaviour
         UnityTransport transport = networkManager.GetComponent<UnityTransport>();
         if (transport == null)
         {
-            SetStatus("FAILED - Unity Transport is missing", true);
+            SetStatus("FAILED - Unity Transport is missing");
             return;
         }
 
         transport.SetConnectionData(ipToConnect, connectionPort);
-        SetStatus($"Connecting to {ipToConnect}:{connectionPort}...", false);
+        SetStatus($"Connecting to {ipToConnect}:{connectionPort}...");
 
         if (!networkManager.StartClient())
         {
-            SetStatus("FAILED - StartClient returned false; check Console", true);
+            SetStatus("FAILED - StartClient returned false; check Console");
         }
     }
 
@@ -197,7 +197,7 @@ public class SimpleNetworkUI : MonoBehaviour
             return true;
         }
 
-        SetStatus("FAILED - No NetworkManager found in scene", true);
+        SetStatus("FAILED - No NetworkManager found in scene");
         return false;
     }
 
@@ -249,7 +249,7 @@ public class SimpleNetworkUI : MonoBehaviour
         string message = clientId == networkManager.LocalClientId
             ? $"CONNECTED as {role} (Client ID {clientId})"
             : $"Client {clientId} connected ({networkManager.ConnectedClientsIds.Count} players)";
-        SetStatus(message, false);
+        SetStatus(message);
     }
 
     private void OnClientDisconnected(ulong clientId)
@@ -258,29 +258,21 @@ public class SimpleNetworkUI : MonoBehaviour
         string message = networkManager != null && clientId == networkManager.LocalClientId
             ? "DISCONNECTED from session"
             : $"Client {clientId} disconnected";
-        SetStatus(message, true);
+        SetStatus(message);
     }
 
     private void OnServerStarted()
     {
-        SetStatus($"HOST RUNNING on port {connectionPort}", false);
+        SetStatus($"HOST RUNNING on port {connectionPort}");
     }
 
     private void OnTransportFailure()
     {
-        SetStatus("TRANSPORT FAILURE - check address, port, and Console", true);
+        SetStatus("TRANSPORT FAILURE - check address and port");
     }
 
-    private void SetStatus(string message, bool isError)
+    private void SetStatus(string message)
     {
         connectionStatus = message;
-        if (isError)
-        {
-            Debug.LogError($"[Network Debug] {message}");
-        }
-        else
-        {
-            Debug.Log($"[Network Debug] {message}");
-        }
     }
 }
