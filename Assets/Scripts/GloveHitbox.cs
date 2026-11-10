@@ -1,17 +1,30 @@
 using Unity.Netcode;
 using UnityEngine;
 
-public class GloveHitbox : NetworkBehaviour
+public class GloveHitbox : MonoBehaviour
 {
     [Header("Punch Settings")]
     [Tooltip("Minimum punch velocity (m/s) required to register damage")]
-    [SerializeField] private float minPunchSpeed = 1.2f;
-    [SerializeField] private float damageMultiplier = 8.0f;
     [SerializeField] private float hitCooldown = 0.25f;
 
     private Vector3 previousPosition;
     private float currentPunchSpeed;
-    private float lastHitTime;
+    private float lastHitTime = float.NegativeInfinity;
+
+    private void Awake()
+    {
+        Collider gloveCollider = GetComponent<Collider>();
+        gloveCollider.isTrigger = true;
+
+        Rigidbody gloveBody = GetComponent<Rigidbody>();
+        if (gloveBody == null)
+        {
+            gloveBody = gameObject.AddComponent<Rigidbody>();
+        }
+
+        gloveBody.isKinematic = true;
+        gloveBody.useGravity = false;
+    }
 
     private void Start()
     {
@@ -26,30 +39,47 @@ public class GloveHitbox : NetworkBehaviour
             currentPunchSpeed = (transform.position - previousPosition).magnitude / Time.deltaTime;
         }
         previousPosition = transform.position;
+
     }
 
     private void OnTriggerEnter(Collider other)
     {
-        // Only the owner of this controller calculates their own hits to eliminate local input lag
-        if (!IsOwner) return;
-
-        // Prevent multiple hit registrations in the same swing
-        if (Time.time - lastHitTime < hitCooldown) return;
-
-        // Check if we struck an opponent's head/torso trigger
-        if (other.CompareTag("Hurtbox") && currentPunchSpeed >= minPunchSpeed)
+        TestDummy testDummy = other.GetComponentInParent<TestDummy>();
+        if (testDummy != null)
         {
-            PlayerHealth targetHealth = other.GetComponentInParent<PlayerHealth>();
-
-            // Confirm the target is an opponent, not our own avatar
-            if (targetHealth != null && targetHealth.OwnerClientId != OwnerClientId)
+            PlayerHealth attackerHealth = GetComponentInParent<PlayerHealth>();
+            if (attackerHealth != null && !attackerHealth.IsOwner)
             {
-                lastHitTime = Time.time;
-                int damage = Mathf.RoundToInt(currentPunchSpeed * damageMultiplier);
-
-                Debug.Log($"Punch landed at {currentPunchSpeed:F2} m/s dealing {damage} damage!");
-                targetHealth.ApplyDamageServerRpc(damage);
+                return;
             }
+
+            testDummy.RegisterPunch(currentPunchSpeed);
+            return;
         }
+
+        PlayerHealth targetHealth = other.GetComponentInParent<PlayerHealth>();
+        if (targetHealth == null)
+        {
+            return;
+        }
+
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager == null || !networkManager.IsClient || !networkManager.IsListening)
+        {
+            return;
+        }
+
+        if (!targetHealth.IsSpawned || targetHealth.OwnerClientId == networkManager.LocalClientId)
+        {
+            return;
+        }
+
+        if (Time.time - lastHitTime < hitCooldown)
+        {
+            return;
+        }
+
+        lastHitTime = Time.time;
+        targetHealth.ReportPunchAttemptServerRpc(currentPunchSpeed);
     }
 }

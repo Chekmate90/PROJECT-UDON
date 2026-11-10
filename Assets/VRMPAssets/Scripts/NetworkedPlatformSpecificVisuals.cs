@@ -16,7 +16,8 @@ namespace UnityEngine.XR.Templates.VRMultiplayer
         {
             if (!TryGetComponent(out m_NetworkPlayer))
             {
-                Debug.LogError("NetworkedPlatformSpecificVisuals requires an XRINetworkPlayer component.");
+                Debug.LogWarning("NetworkedPlatformSpecificVisuals disabled because this avatar has no XRINetworkPlayer component.");
+                enabled = false;
                 return;
             }
 

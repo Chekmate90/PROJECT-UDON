@@ -91,7 +91,11 @@ namespace XRMultiplayer
         /// <inheritdoc/>
         private void Start()
         {
-            m_CurrentPlatformIndex = GetComponentInParent<XRINetworkPlayer>().platformType.Value;
+            XRINetworkPlayer networkPlayer = GetComponentInParent<XRINetworkPlayer>();
+            if (networkPlayer == null)
+                return;
+
+            m_CurrentPlatformIndex = networkPlayer.platformType.Value;
             CheckForUpdate();
         }
 

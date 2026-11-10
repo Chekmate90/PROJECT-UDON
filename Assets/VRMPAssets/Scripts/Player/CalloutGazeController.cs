@@ -40,7 +40,11 @@ namespace XRMultiplayer
         void Start()
         {
             if (!m_GazeTransform)
-                m_GazeTransform = Camera.main.transform;
+            {
+                Camera mainCamera = Camera.main;
+                if (mainCamera != null)
+                    m_GazeTransform = mainCamera.transform;
+            }
         }
 
         protected virtual void Update()
@@ -106,6 +110,9 @@ namespace XRMultiplayer
 
         public void CheckPointerExit()
         {
+            if (!m_GazeTransform)
+                return;
+
             var dotProduct = Vector3.Dot(m_GazeTransform.forward, (transform.position - m_GazeTransform.position).normalized);
             float currentDistance = Vector3.Distance(m_GazeTransform.position, transform.position);
             if (dotProduct < m_FacingThreshold || (m_UseDistanceThreshold && currentDistance > m_MaxDistanceThreshold))

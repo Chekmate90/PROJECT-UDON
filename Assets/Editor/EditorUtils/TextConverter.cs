@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Text;
 using TMPro;
 using UnityEditor;
 using UnityEngine;
@@ -10,9 +9,7 @@ public class TextConverter : MonoBehaviour
     [MenuItem("Tools/Update Legacy Text")]
     static void UpdateLegacyText()
     {
-        Debug.Log("Converting Legacy Text to TMP");
         Text[] allText = FindObjectsByType<Text>(FindObjectsSortMode.None);
-        Debug.Log($"Found {allText.Length} Legacy Text{(allText.Length > 1 ? "s" : "")}");
         List<TextMigrator> migratorList = new List<TextMigrator>();
         foreach (var t in allText)
         {
@@ -34,10 +31,8 @@ public class TextConverter : MonoBehaviour
             DestroyImmediate(t);
         }
 
-        StringBuilder sb = new StringBuilder();
         foreach (var migrator in migratorList)
         {
-            sb.AppendLine($" -Migrating {migrator.textValue} to TMP");
             TMP_Text tmp = migrator.transform.gameObject.AddComponent<TextMeshProUGUI>();
             tmp.text = migrator.textValue;
             tmp.fontSize = migrator.textSize;
@@ -53,7 +48,6 @@ public class TextConverter : MonoBehaviour
                 tmp.fontSizeMax = migrator.maxSize;
             }
         }
-        Debug.Log($"Legacy Text to TMP Conversion Complete\nUpdated Texts:\n{sb}");
     }
 
     static TMPAlignment GetAlignment(TextAnchor anchor)

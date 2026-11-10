@@ -45,8 +45,6 @@ public class TutorialCallbacks : ScriptableObject
         var obj = AssetDatabase.LoadAssetAtPath<GameObject>(path);
         if(obj != null)
             Selection.activeObject = obj;
-        else
-            Debug.LogError($"Object with GUID {m_GUID} not found in scene.");
     }
 
     public void ShowUGSTutorial()
@@ -86,8 +84,6 @@ public class TutorialCallbacks : ScriptableObject
         var obj = GameObject.Find(name);
         if(obj != null)
             Selection.activeObject = obj;
-        else
-            Debug.LogError($"Object with name {name} not found in scene.");
     }
 
     public void OpenPrefabView(GameObject prefab)
