@@ -51,11 +51,7 @@ public static class NetworkPlayerArmIKSetup
             NetworkPlayerArmIK ik = player.GetComponent<NetworkPlayerArmIK>();
             if (ik == null) ik = player.AddComponent<NetworkPlayerArmIK>();
             SerializedObject serializedIK = new SerializedObject(ik);
-            AssignRequired(serializedIK, "leftUpperArm", FindBone(model, "mixamorig:LeftArm"));
-            AssignRequired(serializedIK, "leftForearm", FindBone(model, "mixamorig:LeftForeArm"));
             AssignRequired(serializedIK, "leftHand", FindBone(model, "mixamorig:LeftHand"));
-            AssignRequired(serializedIK, "rightUpperArm", FindBone(model, "mixamorig:RightArm"));
-            AssignRequired(serializedIK, "rightForearm", FindBone(model, "mixamorig:RightForeArm"));
             AssignRequired(serializedIK, "rightHand", FindBone(model, "mixamorig:RightHand"));
             AssignRequired(serializedIK, "leftTarget", player.transform.Find("Left Hand"));
             AssignRequired(serializedIK, "rightTarget", player.transform.Find("Right Hand"));
@@ -63,7 +59,7 @@ public static class NetworkPlayerArmIKSetup
 
             PrefabUtility.SaveAsPrefabAsset(player, PlayerPrefabPath);
             AssetDatabase.SaveAssets();
-            Debug.Log("Network player model and arm IK setup saved. Both arms target their replicated VR hand transforms.");
+            Debug.Log("Network player model and hand IK setup saved. Only the hand bones follow the replicated VR hand transforms.");
         }
         finally
         {
