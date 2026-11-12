@@ -9,12 +9,14 @@ public static class NetworkPlayerArmIKSetup
     [MenuItem("Tools/Project Udon/Set Up Player Model and Arm IK")]
     private static void SetUp()
     {
+        ApplyToNetworkPlayerPrefab();
+    }
+
+    public static void ApplyToNetworkPlayerPrefab()
+    {
         GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
         if (modelAsset == null)
-        {
-            EditorUtility.DisplayDialog("Player model setup", "Could not find Assets/Midans mdol.fbx.", "OK");
-            return;
-        }
+            throw new System.InvalidOperationException("Could not find " + ModelPath);
 
         GameObject player = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
         try
@@ -49,19 +51,19 @@ public static class NetworkPlayerArmIKSetup
             NetworkPlayerArmIK ik = player.GetComponent<NetworkPlayerArmIK>();
             if (ik == null) ik = player.AddComponent<NetworkPlayerArmIK>();
             SerializedObject serializedIK = new SerializedObject(ik);
-            Assign(serializedIK, "leftUpperArm", FindBone(model, "mixamorig:LeftArm"));
-            Assign(serializedIK, "leftForearm", FindBone(model, "mixamorig:LeftForeArm"));
-            Assign(serializedIK, "leftHand", FindBone(model, "mixamorig:LeftHand"));
-            Assign(serializedIK, "rightUpperArm", FindBone(model, "mixamorig:RightArm"));
-            Assign(serializedIK, "rightForearm", FindBone(model, "mixamorig:RightForeArm"));
-            Assign(serializedIK, "rightHand", FindBone(model, "mixamorig:RightHand"));
-            Assign(serializedIK, "leftTarget", player.transform.Find("Left Hand"));
-            Assign(serializedIK, "rightTarget", player.transform.Find("Right Hand"));
+            AssignRequired(serializedIK, "leftUpperArm", FindBone(model, "mixamorig:LeftArm"));
+            AssignRequired(serializedIK, "leftForearm", FindBone(model, "mixamorig:LeftForeArm"));
+            AssignRequired(serializedIK, "leftHand", FindBone(model, "mixamorig:LeftHand"));
+            AssignRequired(serializedIK, "rightUpperArm", FindBone(model, "mixamorig:RightArm"));
+            AssignRequired(serializedIK, "rightForearm", FindBone(model, "mixamorig:RightForeArm"));
+            AssignRequired(serializedIK, "rightHand", FindBone(model, "mixamorig:RightHand"));
+            AssignRequired(serializedIK, "leftTarget", player.transform.Find("Left Hand"));
+            AssignRequired(serializedIK, "rightTarget", player.transform.Find("Right Hand"));
             serializedIK.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(player, PlayerPrefabPath);
             AssetDatabase.SaveAssets();
-            EditorUtility.DisplayDialog("Player model setup", "The rigged model is now on the network player, with arm IK targeting the replicated left and right VR hand poses.", "OK");
+            Debug.Log("Network player model and arm IK setup saved. Both arms target their replicated VR hand transforms.");
         }
         finally
         {
@@ -69,10 +71,12 @@ public static class NetworkPlayerArmIKSetup
         }
     }
 
-    private static void Assign(SerializedObject target, string propertyName, Object value)
+    private static void AssignRequired(SerializedObject target, string propertyName, Object value)
     {
         SerializedProperty property = target.FindProperty(propertyName);
-        if (property != null) property.objectReferenceValue = value;
+        if (property == null || value == null)
+            throw new System.InvalidOperationException("Missing IK assignment: " + propertyName);
+        property.objectReferenceValue = value;
     }
 
     private static Transform FindBone(Transform root, string boneName)

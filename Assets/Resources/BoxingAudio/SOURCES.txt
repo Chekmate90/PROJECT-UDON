@@ -1,0 +1,12 @@
+Boxing audio assets
+
+All three OGG files are from Kenney's Impact Sounds (1.0) pack and are licensed CC0.
+The pack page identifies the collection as CC0: https://kenney.nl/assets/impact-sounds
+The included Kenney-Impact-Sounds-License.txt is the source license text.
+
+PunchHeavy.ogg      <- impactPunch_heavy_000.ogg
+MultiplierImpact.ogg <- impactPlate_heavy_000.ogg
+KnockoutThud.ogg    <- impactSoft_heavy_000.ogg
+
+The source files were retrieved from a public mirror that records their Kenney provenance:
+https://github.com/shoemoney/commander-in-chief/tree/main/assets/cc0_extra/sfx_impact

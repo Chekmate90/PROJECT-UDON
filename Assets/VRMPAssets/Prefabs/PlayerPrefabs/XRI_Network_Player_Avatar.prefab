@@ -535,6 +535,7 @@ MonoBehaviour:
   comboHit3Multiplier: 1.33
   bodyHeight: 1.8
   bodyRadius: 0.32
+  deathScreenSeconds: 5
   currentHealth:
     m_InternalValue: 100
 --- !u!136 &7482910365128471940
