@@ -573,12 +573,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be88e61a420c0804793882d1dd70a9c3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  leftUpperArm: {fileID: 3536266295236673996}
-  leftForearm: {fileID: 8462104079526344516}
   leftHand: {fileID: 3903943508637704418}
   leftTarget: {fileID: 1523342480417178809}
-  rightUpperArm: {fileID: 5773745211833221172}
-  rightForearm: {fileID: 511210977054776894}
   rightHand: {fileID: 1564799470920477769}
   rightTarget: {fileID: 908897919254213233}
   positionWeight: 1

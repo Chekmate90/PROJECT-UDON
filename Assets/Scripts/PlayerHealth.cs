@@ -164,12 +164,80 @@ public class PlayerHealth : NetworkBehaviour
 
         body.transform.localPosition = Vector3.up * (bodyHeight * 0.5f);
         body.transform.localScale = new Vector3(bodyRadius * 2f, bodyHeight * 0.5f, bodyRadius * 2f);
+        ScaleModelToTargetHeight(modelRoot);
+        AlignModelFeetToOrigin(modelRoot);
+        AlignBodyHitboxToModel(modelRoot);
 
         headPose = FindChildNamed(transform, "Head");
         leftHandPose = FindChildNamed(transform, "Left Hand");
         rightHandPose = FindChildNamed(transform, "Right Hand");
         xrOrigin = FindFirstObjectByType<XROrigin>();
         if (xrOrigin != null) modalityManager = xrOrigin.GetComponent<XRInputModalityManager>();
+    }
+
+    private void AlignBodyHitboxToModel(Transform modelRoot)
+    {
+        CapsuleCollider bodyHitbox = GetComponent<CapsuleCollider>();
+        if (bodyHitbox == null) return;
+
+        bodyHitbox.direction = 1;
+        if (modelRoot == null)
+        {
+            bodyHitbox.height = bodyHeight;
+            bodyHitbox.center = Vector3.up * (bodyHeight * 0.5f);
+            return;
+        }
+
+        if (!TryGetModelBounds(modelRoot, out Bounds modelBounds) || modelBounds.size.y <= 0.01f) return;
+
+        float modelHeight = transform.InverseTransformVector(Vector3.up * modelBounds.size.y).magnitude;
+        Vector3 modelCenter = transform.InverseTransformPoint(modelBounds.center);
+        bodyHitbox.height = modelHeight;
+        bodyHitbox.center = modelCenter;
+        bodyHitbox.radius = Mathf.Min(bodyRadius, modelHeight * 0.5f);
+    }
+
+    private void AlignModelFeetToOrigin(Transform modelRoot)
+    {
+        if (modelRoot == null || !TryGetModelBounds(modelRoot, out Bounds modelBounds)) return;
+
+        float floorY = transform.position.y;
+        float feetOffset = floorY - modelBounds.min.y;
+        if (Mathf.Abs(feetOffset) > 0.001f)
+            modelRoot.position += Vector3.up * feetOffset;
+    }
+
+    private void ScaleModelToTargetHeight(Transform modelRoot)
+    {
+        if (modelRoot == null || !TryGetModelBounds(modelRoot, out Bounds modelBounds) || modelBounds.size.y <= 0.01f)
+            return;
+
+        float scaleFactor = bodyHeight / modelBounds.size.y;
+        if (Mathf.Abs(scaleFactor - 1f) > 0.001f)
+            modelRoot.localScale *= scaleFactor;
+    }
+
+    private static bool TryGetModelBounds(Transform modelRoot, out Bounds modelBounds)
+    {
+        modelBounds = default;
+        if (modelRoot == null) return false;
+
+        bool hasBounds = false;
+        foreach (Renderer modelRenderer in modelRoot.GetComponentsInChildren<Renderer>(true))
+        {
+            if (!modelRenderer.enabled) continue;
+            if (!hasBounds)
+            {
+                modelBounds = modelRenderer.bounds;
+                hasBounds = true;
+            }
+            else
+            {
+                modelBounds.Encapsulate(modelRenderer.bounds);
+            }
+        }
+
+        return hasBounds;
     }
 
     private static Transform FindChildNamed(Transform root, string childName)
