@@ -6,6 +6,7 @@ using Unity.XR.CoreUtils;
 using UnityEngine.XR.Interaction.Toolkit.Inputs;
 using UnityEngine.XR.Hands;
 using UnityEngine.UI;
+using System.Collections;
 
 public class PlayerHealth : NetworkBehaviour
 {
@@ -21,6 +22,8 @@ public class PlayerHealth : NetworkBehaviour
     [SerializeField] private float comboHit3Multiplier = 1.33f;
     [SerializeField] private float bodyHeight = 1.8f;
     [SerializeField] private float bodyRadius = 0.32f;
+    [SerializeField, Min(0.5f)] private float boxingSpawnHalfSpacing = 1.5f;
+    [SerializeField, Min(1f)] private float deathScreenSeconds = 5f;
 
     private static readonly Color[] PlayerColors =
     {
@@ -40,6 +43,15 @@ public class PlayerHealth : NetworkBehaviour
     private XRInputModalityManager modalityManager;
     private Renderer capsuleRenderer;
     private GameObject healthHud;
+    private GameObject deathScreen;
+    private Text deathTitle;
+    private Text deathDetails;
+    private Text combatFeedbackText;
+    private Coroutine combatFeedbackRoutine;
+    private AudioSource combatAudioSource;
+    private static AudioClip punchHitClip;
+    private static AudioClip multiplierClip;
+    private static AudioClip knockoutClip;
     private readonly List<Image> healthBars = new();
     private readonly List<Text> healthLabels = new();
 
@@ -50,6 +62,10 @@ public class PlayerHealth : NetworkBehaviour
     private Transform previousRightHandOrigin;
     private Transform sceneLeftGlove;
     private Transform sceneRightGlove;
+    private bool roundResetScheduled;
+    private static bool hasBoxingSpawnCenter;
+    private static Vector3 boxingSpawnCenter;
+    private static Quaternion boxingSpawnOrientation;
 
     // Synchronized variable across all connected clients
     public NetworkVariable<int> currentHealth = new NetworkVariable<int>(
@@ -67,11 +83,14 @@ public class PlayerHealth : NetworkBehaviour
         currentHealth.OnValueChanged += OnHealthChanged;
         playerColor.OnValueChanged += OnPlayerColorChanged;
         BuildCapsulePlayer();
+        if (IsOwner) PositionAtBoxingSpawn();
         AddGloveHitboxes();
+        EnsureCombatAudio();
         if (IsOwner)
         {
             localPlayer = this;
             CreateHealthHud();
+            CreateDeathScreen();
             localHandPoseReplicator = GetComponent<XRHandPoseReplicator>();
         }
         if (IsServer)
@@ -92,6 +111,7 @@ public class PlayerHealth : NetworkBehaviour
         {
             localPlayer = null;
             if (healthHud != null) Destroy(healthHud);
+            if (deathScreen != null) Destroy(deathScreen);
         }
         RefreshHealthHud();
     }
@@ -106,9 +126,12 @@ public class PlayerHealth : NetworkBehaviour
     private void BuildCapsulePlayer()
     {
         // Keep the existing hand/glove hierarchies, colliders, and punch scripts intact.
+        Transform modelRoot = transform.Find("Midans mdol");
         foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
         {
-            bool keepVisible = renderer.name == "Capsule Player Body";
+            bool isModelRenderer = modelRoot != null &&
+                (renderer.transform == modelRoot || renderer.transform.IsChildOf(modelRoot));
+            bool keepVisible = isModelRenderer || (modelRoot == null && renderer.name == "Capsule Player Body");
             Transform child = renderer.transform;
             while (child != null && child != transform)
             {
@@ -159,8 +182,9 @@ public class PlayerHealth : NetworkBehaviour
     private void ApplyPlayerColor(Color color)
     {
         if (capsuleRenderer == null) return;
-        capsuleRenderer.enabled = true;
-        capsuleRenderer.material.color = color;
+        bool usingModel = transform.Find("Midans mdol") != null;
+        capsuleRenderer.enabled = !usingModel;
+        if (!usingModel) capsuleRenderer.material.color = color;
     }
 
     private void UpdateNetworkAvatarPose()
@@ -178,6 +202,31 @@ public class PlayerHealth : NetworkBehaviour
         Transform right = handTracking ? GetHandSkeleton(modalityManager.rightHand) : GetTransform(modalityManager.rightController);
         if (left != null && leftHandPose != null) leftHandPose.SetPositionAndRotation(left.position, left.rotation);
         if (right != null && rightHandPose != null) rightHandPose.SetPositionAndRotation(right.position, right.rotation);
+    }
+
+    private void PositionAtBoxingSpawn()
+    {
+        if (xrOrigin == null) return;
+
+        // Cache the scene's starting pose once so reconnects don't keep pushing
+        // the local rig farther away from the ring.
+        if (!hasBoxingSpawnCenter)
+        {
+            boxingSpawnCenter = xrOrigin.transform.position;
+            boxingSpawnOrientation = xrOrigin.transform.rotation;
+            hasBoxingSpawnCenter = true;
+        }
+
+        Vector3 ringRight = boxingSpawnOrientation * Vector3.right;
+        float side = OwnerClientId % 2 == 0 ? -1f : 1f;
+        Vector3 spawnPosition = boxingSpawnCenter + ringRight * (side * boxingSpawnHalfSpacing);
+        Vector3 towardCenter = boxingSpawnCenter - spawnPosition;
+        Quaternion facing = towardCenter.sqrMagnitude > 0.001f
+            ? Quaternion.LookRotation(towardCenter.normalized, Vector3.up)
+            : boxingSpawnOrientation;
+
+        xrOrigin.transform.SetPositionAndRotation(spawnPosition, facing);
+        transform.SetPositionAndRotation(spawnPosition, facing);
     }
 
     private static Transform GetTransform(GameObject obj) => obj != null ? obj.transform : null;
@@ -242,7 +291,134 @@ public class PlayerHealth : NetworkBehaviour
             label.font = font; label.fontSize = 16; label.alignment = TextAnchor.MiddleLeft; label.color = Color.white;
             healthLabels.Add(label);
         }
+
+        GameObject feedbackObject = new GameObject("Combat Feedback", typeof(RectTransform), typeof(Text));
+        feedbackObject.transform.SetParent(healthHud.transform, false);
+        RectTransform feedbackRect = feedbackObject.GetComponent<RectTransform>();
+        feedbackRect.anchorMin = new Vector2(0.15f, 0.58f);
+        feedbackRect.anchorMax = new Vector2(0.85f, 0.72f);
+        feedbackRect.offsetMin = Vector2.zero;
+        feedbackRect.offsetMax = Vector2.zero;
+        combatFeedbackText = feedbackObject.GetComponent<Text>();
+        combatFeedbackText.font = font;
+        combatFeedbackText.fontSize = 40;
+        combatFeedbackText.fontStyle = FontStyle.Bold;
+        combatFeedbackText.alignment = TextAnchor.MiddleCenter;
+        combatFeedbackText.color = new Color(1f, 0.82f, 0.28f, 0f);
+        combatFeedbackText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        combatFeedbackText.verticalOverflow = VerticalWrapMode.Overflow;
+        combatFeedbackText.text = string.Empty;
         RefreshHealthHud();
+    }
+
+    private void EnsureCombatAudio()
+    {
+        if (combatAudioSource == null) combatAudioSource = GetComponent<AudioSource>();
+        if (combatAudioSource == null) combatAudioSource = gameObject.AddComponent<AudioSource>();
+        combatAudioSource.playOnAwake = false;
+        combatAudioSource.spatialBlend = 0.65f;
+        combatAudioSource.dopplerLevel = 0f;
+        combatAudioSource.minDistance = 1.2f;
+        combatAudioSource.maxDistance = 24f;
+        combatAudioSource.rolloffMode = AudioRolloffMode.Logarithmic;
+
+        if (punchHitClip == null) punchHitClip = Resources.Load<AudioClip>("BoxingAudio/PunchHeavy");
+        if (multiplierClip == null) multiplierClip = Resources.Load<AudioClip>("BoxingAudio/MultiplierImpact");
+        if (knockoutClip == null) knockoutClip = Resources.Load<AudioClip>("BoxingAudio/KnockoutThud");
+    }
+
+    private void PlayCombatOneShot(AudioClip clip, float volume)
+    {
+        if (clip == null) return;
+        EnsureCombatAudio();
+        combatAudioSource.PlayOneShot(clip, volume);
+    }
+
+    private void ShowCombatFeedback(string message, Color color)
+    {
+        if (combatFeedbackText == null) return;
+        if (combatFeedbackRoutine != null) StopCoroutine(combatFeedbackRoutine);
+        combatFeedbackText.text = message;
+        color.a = 1f;
+        combatFeedbackText.color = color;
+        combatFeedbackRoutine = StartCoroutine(FadeCombatFeedback(color, 0.9f));
+    }
+
+    private IEnumerator FadeCombatFeedback(Color color, float duration)
+    {
+        float elapsed = 0f;
+        while (elapsed < duration && combatFeedbackText != null)
+        {
+            elapsed += Time.deltaTime;
+            color.a = 1f - Mathf.Clamp01(elapsed / duration);
+            combatFeedbackText.color = color;
+            yield return null;
+        }
+        if (combatFeedbackText != null) combatFeedbackText.text = string.Empty;
+        combatFeedbackRoutine = null;
+    }
+
+    private void CreateDeathScreen()
+    {
+        if (deathScreen != null) return;
+
+        deathScreen = new GameObject("Death Screen", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
+        Canvas canvas = deathScreen.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 200;
+        CanvasScaler scaler = deathScreen.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1280, 720);
+
+        GameObject overlay = new GameObject("Overlay", typeof(RectTransform), typeof(Image));
+        overlay.transform.SetParent(deathScreen.transform, false);
+        RectTransform overlayRect = overlay.GetComponent<RectTransform>();
+        overlayRect.anchorMin = Vector2.zero;
+        overlayRect.anchorMax = Vector2.one;
+        overlayRect.offsetMin = Vector2.zero;
+        overlayRect.offsetMax = Vector2.zero;
+        overlay.GetComponent<Image>().color = new Color(0.015f, 0.02f, 0.035f, 0.88f);
+
+        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        deathTitle = CreateDeathText("Result", overlay.transform, font, 54, FontStyle.Bold, new Vector2(0.1f, 0.53f), new Vector2(0.9f, 0.72f));
+        deathDetails = CreateDeathText("Criteria", overlay.transform, font, 24, FontStyle.Normal, new Vector2(0.1f, 0.34f), new Vector2(0.9f, 0.52f));
+        deathScreen.SetActive(false);
+    }
+
+    private static Text CreateDeathText(string objectName, Transform parent, Font font, int size, FontStyle style, Vector2 anchorMin, Vector2 anchorMax)
+    {
+        GameObject textObject = new GameObject(objectName, typeof(RectTransform), typeof(Text));
+        textObject.transform.SetParent(parent, false);
+        RectTransform rect = textObject.GetComponent<RectTransform>();
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        Text text = textObject.GetComponent<Text>();
+        text.font = font;
+        text.fontSize = size;
+        text.fontStyle = style;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = Color.white;
+        text.horizontalOverflow = HorizontalWrapMode.Wrap;
+        text.verticalOverflow = VerticalWrapMode.Overflow;
+        return text;
+    }
+
+    private void ShowDeathScreen(bool defeated)
+    {
+        if (deathScreen == null) CreateDeathScreen();
+        if (deathTitle != null) deathTitle.text = defeated ? "KNOCKED OUT" : "YOU WIN";
+        if (deathDetails != null)
+            deathDetails.text = defeated
+                ? $"Knockout: health reached 0 from valid punches (1.2–5.0 m/s).\nRound restarts in {deathScreenSeconds:0} seconds."
+                : $"Opponent reached 0 health from valid punches.\nRound restarts in {deathScreenSeconds:0} seconds.";
+        deathScreen.SetActive(true);
+    }
+
+    private void HideDeathScreen()
+    {
+        if (deathScreen != null) deathScreen.SetActive(false);
     }
 
     private static void RefreshHealthHud()
@@ -468,16 +644,69 @@ public class PlayerHealth : NetworkBehaviour
         int previousHealth = currentHealth.Value;
 
         currentHealth.Value = Mathf.Max(0, currentHealth.Value - damage);
+        bool knockedOut = previousHealth > 0 && currentHealth.Value == 0;
+        HitFeedbackClientRpc(attackerClientId, comboCount, damage, comboMultiplier, reportedPunchSpeed, knockedOut);
 
-        if (previousHealth > 0 && currentHealth.Value == 0)
+        if (knockedOut)
         {
-            TriggerKnockoutClientRpc();
+            TriggerKnockoutClientRpc(OwnerClientId);
+            if (!roundResetScheduled)
+            {
+                roundResetScheduled = true;
+                StartCoroutine(ResetRoundAfterKnockout());
+            }
         }
     }
 
     [ClientRpc]
-    private void TriggerKnockoutClientRpc()
+    private void HitFeedbackClientRpc(ulong attackerClientId, int comboCount, int damage, float comboMultiplier, float punchSpeed, bool knockedOut)
     {
-        // Add sound effects, screen fade, or round-end triggers here
+        if (!knockedOut)
+        {
+            float hitVolume = Mathf.Lerp(0.55f, 0.9f, Mathf.InverseLerp(minPunchSpeed, maxPunchSpeed, punchSpeed));
+            PlayCombatOneShot(punchHitClip, hitVolume);
+        }
+
+        if (localPlayer == null) return;
+        if (localPlayer.OwnerClientId == OwnerClientId)
+        {
+            localPlayer.ShowCombatFeedback($"-{damage} HP", new Color(1f, 0.42f, 0.32f));
+        }
+        else if (localPlayer.OwnerClientId == attackerClientId && comboCount > 1)
+        {
+            float multiplierVolume = comboCount == 2 ? 0.68f : 0.95f;
+            localPlayer.PlayCombatOneShot(multiplierClip, multiplierVolume);
+            localPlayer.ShowCombatFeedback($"COMBO x{comboCount}  ·  {comboMultiplier:0.##}x DAMAGE", new Color(1f, 0.82f, 0.28f));
+        }
+    }
+
+    [ClientRpc]
+    private void TriggerKnockoutClientRpc(ulong defeatedClientId)
+    {
+        PlayCombatOneShot(knockoutClip, 0.95f);
+        if (localPlayer != null)
+            localPlayer.ShowDeathScreen(localPlayer.OwnerClientId == defeatedClientId);
+    }
+
+    private IEnumerator ResetRoundAfterKnockout()
+    {
+        yield return new WaitForSeconds(deathScreenSeconds);
+
+        foreach (PlayerHealth player in ActivePlayers)
+        {
+            if (player == null || !player.IsSpawned) continue;
+            player.currentHealth.Value = player.maxHealth;
+            player.lastHitTimes.Clear();
+            player.attackerComboCounts.Clear();
+            player.roundResetScheduled = false;
+        }
+
+        ResetDeathScreensClientRpc();
+    }
+
+    [ClientRpc]
+    private void ResetDeathScreensClientRpc()
+    {
+        if (localPlayer != null) localPlayer.HideDeathScreen();
     }
 }
