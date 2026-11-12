@@ -7,6 +7,7 @@ using UnityEngine.XR.Interaction.Toolkit.Inputs;
 using UnityEngine.XR.Hands;
 using UnityEngine.UI;
 using System.Collections;
+using TMPro;
 
 public class PlayerHealth : NetworkBehaviour
 {
@@ -67,6 +68,13 @@ public class PlayerHealth : NetworkBehaviour
     private static Vector3 boxingSpawnCenter;
     private static Quaternion boxingSpawnOrientation;
 
+    private Transform localLeftHandSource;
+    private Transform localRightHandSource;
+    private Transform modelHeadBone;
+    private Image overheadHealthBarFill;
+    private TMP_Text overheadHealthBarTMP;
+    private Text overheadHealthBarText;
+
     // Synchronized variable across all connected clients
     public NetworkVariable<int> currentHealth = new NetworkVariable<int>(
         100,
@@ -77,12 +85,37 @@ public class PlayerHealth : NetworkBehaviour
     public int MaxHealth => maxHealth;
     public Color PlayerColor => playerColor.Value;
 
+    private void Awake()
+    {
+        EnsureAvatarHierarchyIntegrity();
+    }
+
+    private void EnsureAvatarHierarchyIntegrity()
+    {
+        Transform leftHand = transform.Find("Left Hand") ?? FindChildNamed(transform, "Left Hand");
+        if (leftHand != null && leftHand.parent != transform)
+        {
+            leftHand.SetParent(transform, true);
+            leftHand.localScale = Vector3.one;
+        }
+
+        Transform rightHand = transform.Find("Right Hand") ?? FindChildNamed(transform, "Right Hand");
+        if (rightHand != null && rightHand.parent != transform)
+        {
+            rightHand.SetParent(transform, true);
+            rightHand.localScale = Vector3.one;
+        }
+    }
+
     public override void OnNetworkSpawn()
     {
+        EnsureAvatarHierarchyIntegrity();
         if (!ActivePlayers.Contains(this)) ActivePlayers.Add(this);
         currentHealth.OnValueChanged += OnHealthChanged;
         playerColor.OnValueChanged += OnPlayerColorChanged;
         BuildCapsulePlayer();
+        SetupFirstPersonView();
+        SetupOverheadHealthBar();
         if (IsOwner) PositionAtBoxingSpawn();
         AddGloveHitboxes();
         EnsureCombatAudio();
@@ -92,6 +125,11 @@ public class PlayerHealth : NetworkBehaviour
             CreateHealthHud();
             CreateDeathScreen();
             localHandPoseReplicator = GetComponent<XRHandPoseReplicator>();
+            desktopController = GetComponent<DesktopPlayerController>();
+            if (desktopController != null)
+            {
+                desktopController.EvaluateActivation();
+            }
         }
         if (IsServer)
         {
@@ -100,6 +138,7 @@ public class PlayerHealth : NetworkBehaviour
         }
         ApplyPlayerColor(playerColor.Value);
         RefreshHealthHud();
+        UpdateOverheadHealthBar();
     }
 
     public override void OnNetworkDespawn()
@@ -118,6 +157,7 @@ public class PlayerHealth : NetworkBehaviour
 
     private void OnHealthChanged(int previousValue, int newValue)
     {
+        UpdateOverheadHealthBar();
         RefreshHealthHud();
     }
 
@@ -125,24 +165,64 @@ public class PlayerHealth : NetworkBehaviour
 
     private void BuildCapsulePlayer()
     {
-        // Keep the existing hand/glove hierarchies, colliders, and punch scripts intact.
+        EnsureAvatarHierarchyIntegrity();
+
+        // 1. Permanently hide and disable template network hands to eliminate purple missing-shader hands
+        string[] templateHandNames = new string[] {
+            "Hand_Left_Networked", "Hand_Right_Networked",
+            "Left Hand Networked", "Right Hand Networked",
+            "LeftHand", "RightHand",
+            "L_Wrist", "R_Wrist", "L_Wrist - Quest", "R_Wrist - Quest",
+            "Quest", "AXR"
+        };
+
+        foreach (string tName in templateHandNames)
+        {
+            foreach (Transform t in GetComponentsInChildren<Transform>(true))
+            {
+                if (t != null && t != transform && t.name.Equals(tName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    // Never disable the character model or its bones
+                    if (t.name.StartsWith("mixamorig") || t.name.Contains("Midans")) continue;
+                    foreach (Renderer r in t.GetComponentsInChildren<Renderer>(true))
+                    {
+                        r.enabled = false;
+                    }
+                    t.gameObject.SetActive(false);
+                }
+            }
+        }
+
+        // 2. Only show Midans mdol character model (and gloves if present)
         Transform modelRoot = transform.Find("Midans mdol");
         foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
         {
             bool isModelRenderer = modelRoot != null &&
                 (renderer.transform == modelRoot || renderer.transform.IsChildOf(modelRoot));
-            bool keepVisible = isModelRenderer || (modelRoot == null && renderer.name == "Capsule Player Body");
-            Transform child = renderer.transform;
-            while (child != null && child != transform)
+            bool isGloveRenderer = renderer.CompareTag("Glove") && (modelRoot == null || !renderer.transform.IsChildOf(modelRoot));
+
+            // Ensure no template hand renderers slip through
+            bool isTemplateHand = false;
+            Transform p = renderer.transform;
+            while (p != null && p != transform)
             {
-                if (child.tag == "PlayerHand" || child.tag == "Glove" || child.name == "Left Hand" || child.name == "Right Hand")
+                string pName = p.name.ToLowerInvariant();
+                if (pName.Contains("networked") || pName.Contains("wrist") || pName.Contains("quest") || pName == "axr")
                 {
-                    keepVisible = true;
+                    isTemplateHand = true;
                     break;
                 }
-                child = child.parent;
+                p = p.parent;
             }
-            if (!keepVisible) renderer.enabled = false;
+
+            if (isTemplateHand)
+            {
+                renderer.enabled = false;
+            }
+            else
+            {
+                renderer.enabled = isModelRenderer || isGloveRenderer;
+            }
         }
 
         Transform existingBody = transform.Find("Capsule Player Body");
@@ -173,6 +253,9 @@ public class PlayerHealth : NetworkBehaviour
         rightHandPose = FindChildNamed(transform, "Right Hand");
         xrOrigin = FindFirstObjectByType<XROrigin>();
         if (xrOrigin != null) modalityManager = xrOrigin.GetComponent<XRInputModalityManager>();
+        ResolveLocalHandSources();
+        SetupFirstPersonView();
+        SetupOverheadHealthBar();
     }
 
     private void AlignBodyHitboxToModel(Transform modelRoot)
@@ -255,21 +338,53 @@ public class PlayerHealth : NetworkBehaviour
         if (!usingModel) capsuleRenderer.material.color = color;
     }
 
+    private DesktopPlayerController desktopController;
+
     private void UpdateNetworkAvatarPose()
     {
-        if (!IsSpawned || !IsOwner || xrOrigin == null) return;
-        if (transform.position != xrOrigin.transform.position || transform.rotation != xrOrigin.transform.rotation)
-            transform.SetPositionAndRotation(xrOrigin.transform.position, xrOrigin.transform.rotation);
+        if (!IsSpawned || !IsOwner) return;
 
-        if (headPose != null && xrOrigin.Camera != null)
-            headPose.SetPositionAndRotation(xrOrigin.Camera.transform.position, xrOrigin.Camera.transform.rotation);
+        if (desktopController == null) desktopController = GetComponent<DesktopPlayerController>();
+        if (desktopController != null && desktopController.IsActive) return;
 
-        if (modalityManager == null) return;
-        bool handTracking = XRInputModalityManager.currentInputMode.Value == XRInputModalityManager.InputMode.TrackedHand;
-        Transform left = handTracking ? GetHandSkeleton(modalityManager.leftHand) : GetTransform(modalityManager.leftController);
-        Transform right = handTracking ? GetHandSkeleton(modalityManager.rightHand) : GetTransform(modalityManager.rightController);
-        if (left != null && leftHandPose != null) leftHandPose.SetPositionAndRotation(left.position, left.rotation);
-        if (right != null && rightHandPose != null) rightHandPose.SetPositionAndRotation(right.position, right.rotation);
+        if (xrOrigin == null) return;
+
+        // 1. First-Person Avatar Alignment:
+        // Position avatar body directly on the floor below the VR headset camera
+        if (xrOrigin.Camera != null)
+        {
+            Vector3 camPos = xrOrigin.Camera.transform.position;
+            Vector3 groundPos = new Vector3(camPos.x, xrOrigin.transform.position.y, camPos.z);
+            Vector3 camForward = Vector3.ProjectOnPlane(xrOrigin.Camera.transform.forward, Vector3.up).normalized;
+            if (camForward.sqrMagnitude > 0.001f)
+            {
+                transform.SetPositionAndRotation(groundPos, Quaternion.LookRotation(camForward, Vector3.up));
+            }
+            else
+            {
+                transform.position = groundPos;
+            }
+
+            if (headPose != null)
+            {
+                headPose.SetPositionAndRotation(camPos, xrOrigin.Camera.transform.rotation);
+            }
+        }
+
+        // 2. Real-time Hand / Punch Tracking from VR controllers
+        if (localLeftHandSource == null || localRightHandSource == null)
+        {
+            ResolveLocalHandSources();
+        }
+
+        if (localLeftHandSource != null && leftHandPose != null)
+        {
+            leftHandPose.SetPositionAndRotation(localLeftHandSource.position, localLeftHandSource.rotation);
+        }
+        if (localRightHandSource != null && rightHandPose != null)
+        {
+            rightHandPose.SetPositionAndRotation(localRightHandSource.position, localRightHandSource.rotation);
+        }
     }
 
     private void PositionAtBoxingSpawn()
@@ -384,10 +499,10 @@ public class PlayerHealth : NetworkBehaviour
         if (combatAudioSource == null) combatAudioSource = GetComponent<AudioSource>();
         if (combatAudioSource == null) combatAudioSource = gameObject.AddComponent<AudioSource>();
         combatAudioSource.playOnAwake = false;
-        combatAudioSource.spatialBlend = 0.65f;
+        combatAudioSource.spatialBlend = 0.15f; // Mostly 2D stereo in VR headset for high loudness and clarity
         combatAudioSource.dopplerLevel = 0f;
-        combatAudioSource.minDistance = 1.2f;
-        combatAudioSource.maxDistance = 24f;
+        combatAudioSource.minDistance = 3.5f;
+        combatAudioSource.maxDistance = 35f;
         combatAudioSource.rolloffMode = AudioRolloffMode.Logarithmic;
 
         if (punchHitClip == null) punchHitClip = Resources.Load<AudioClip>("BoxingAudio/PunchHeavy");
@@ -399,7 +514,8 @@ public class PlayerHealth : NetworkBehaviour
     {
         if (clip == null) return;
         EnsureCombatAudio();
-        combatAudioSource.PlayOneShot(clip, volume);
+        float boostedVolume = Mathf.Clamp01(volume * 1.5f);
+        combatAudioSource.PlayOneShot(clip, boostedVolume);
     }
 
     private void ShowCombatFeedback(string message, Color color)
@@ -475,6 +591,11 @@ public class PlayerHealth : NetworkBehaviour
 
     private void ShowDeathScreen(bool defeated)
     {
+        if (VRBoxingUI.Instance != null)
+        {
+            VRBoxingUI.Instance.ShowKnockoutAnnouncement(!defeated, deathScreenSeconds);
+        }
+
         if (deathScreen == null) CreateDeathScreen();
         if (deathTitle != null) deathTitle.text = defeated ? "KNOCKED OUT" : "YOU WIN";
         if (deathDetails != null)
@@ -491,8 +612,16 @@ public class PlayerHealth : NetworkBehaviour
 
     private static void RefreshHealthHud()
     {
-        if (localPlayer == null || localPlayer.healthBars.Count == 0) return;
         List<PlayerHealth> players = ActivePlayers.FindAll(player => player != null && player.IsSpawned);
+        foreach (PlayerHealth p in players)
+        {
+            if (VRBoxingUI.Instance != null)
+            {
+                VRBoxingUI.Instance.UpdatePlayerHealth(p.OwnerClientId, p.currentHealth.Value, p.maxHealth);
+            }
+        }
+
+        if (localPlayer == null || localPlayer.healthBars.Count == 0) return;
         for (int i = 0; i < localPlayer.healthBars.Count; i++)
         {
             bool visible = i < players.Count;
@@ -548,30 +677,16 @@ public class PlayerHealth : NetworkBehaviour
         bool usingExistingGloveColliders = false;
         if (leftHandOrigin == null && rightHandOrigin == null)
         {
-            XRInputModalityManager modalityManager = null;
-            XROrigin xrOrigin = FindFirstObjectByType<XROrigin>();
-            if (xrOrigin != null)
+            if (localLeftHandSource != null || localRightHandSource != null)
             {
-                modalityManager = xrOrigin.GetComponent<XRInputModalityManager>();
+                leftHandOrigin = localLeftHandSource;
+                rightHandOrigin = localRightHandSource;
             }
-
-            if (modalityManager != null && XRInputModalityManager.currentInputMode.Value == XRInputModalityManager.InputMode.TrackedHand)
-            {
-                leftHandOrigin = modalityManager.leftHand != null ? modalityManager.leftHand.transform : null;
-                rightHandOrigin = modalityManager.rightHand != null ? modalityManager.rightHand.transform : null;
-            }
-
-            if (leftHandOrigin == null && rightHandOrigin == null && modalityManager != null)
-            {
-                leftHandOrigin = modalityManager.leftController != null ? modalityManager.leftController.transform : null;
-                rightHandOrigin = modalityManager.rightController != null ? modalityManager.rightController.transform : null;
-            }
-
-            if (leftHandOrigin == null && rightHandOrigin == null)
+            else
             {
                 FindSceneGloves(out leftHandOrigin, out rightHandOrigin);
-                usingExistingGloveColliders = leftHandOrigin != null || rightHandOrigin != null;
             }
+            usingExistingGloveColliders = leftHandOrigin != null || rightHandOrigin != null;
         }
 
         if (leftHandOrigin == null && rightHandOrigin == null)
@@ -664,8 +779,8 @@ public class PlayerHealth : NetworkBehaviour
     }
 
     // Called by glove hit detection; executes only on the Server/Host
-    [ServerRpc(RequireOwnership = false)]
-    public void ReportPunchAttemptServerRpc(float reportedPunchSpeed, ServerRpcParams rpcParams = default)
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    public void ReportPunchAttemptServerRpc(float reportedPunchSpeed, RpcParams rpcParams = default)
     {
         if (!IsServer) return;
 
@@ -739,6 +854,7 @@ public class PlayerHealth : NetworkBehaviour
         if (localPlayer.OwnerClientId == OwnerClientId)
         {
             localPlayer.ShowCombatFeedback($"-{damage} HP", new Color(1f, 0.42f, 0.32f));
+            VRHaptics.TriggerDamageImpulse(damage);
         }
         else if (localPlayer.OwnerClientId == attackerClientId && comboCount > 1)
         {
@@ -753,7 +869,13 @@ public class PlayerHealth : NetworkBehaviour
     {
         PlayCombatOneShot(knockoutClip, 0.95f);
         if (localPlayer != null)
+        {
+            if (localPlayer.OwnerClientId == defeatedClientId)
+            {
+                VRHaptics.TriggerKnockoutImpulse();
+            }
             localPlayer.ShowDeathScreen(localPlayer.OwnerClientId == defeatedClientId);
+        }
     }
 
     private IEnumerator ResetRoundAfterKnockout()
@@ -776,5 +898,174 @@ public class PlayerHealth : NetworkBehaviour
     private void ResetDeathScreensClientRpc()
     {
         if (localPlayer != null) localPlayer.HideDeathScreen();
+    }
+
+    private void ResolveLocalHandSources()
+    {
+        if (xrOrigin == null) xrOrigin = FindFirstObjectByType<XROrigin>();
+        if (xrOrigin == null) return;
+
+        foreach (Transform t in xrOrigin.GetComponentsInChildren<Transform>(true))
+        {
+            string n = t.name.ToLowerInvariant();
+            if (localLeftHandSource == null)
+            {
+                if (n == "glove_left" || n == "left controller" || n == "left hand" || n.Contains("lefthand"))
+                {
+                    localLeftHandSource = t;
+                }
+            }
+            if (localRightHandSource == null)
+            {
+                if (n == "glove_right" || n == "right controller" || n == "right hand" || n.Contains("righthand"))
+                {
+                    localRightHandSource = t;
+                }
+            }
+        }
+    }
+
+    private void SetupFirstPersonView()
+    {
+        if (modelHeadBone == null)
+        {
+            Transform modelRoot = transform.Find("Midans mdol");
+            if (modelRoot != null)
+            {
+                modelHeadBone = FindChildRecursive(modelRoot, "mixamorig:Head");
+            }
+            if (modelHeadBone == null)
+            {
+                modelHeadBone = FindChildRecursive(transform, "mixamorig:Head");
+            }
+        }
+
+        if (modelHeadBone != null)
+        {
+            if (IsOwner)
+            {
+                // Local player: hide head bone mesh so it doesn't block the VR camera view
+                modelHeadBone.localScale = Vector3.zero;
+            }
+            else
+            {
+                // Remote player: ensure head is visible to opponents
+                modelHeadBone.localScale = Vector3.one;
+            }
+        }
+    }
+
+    private void SetupOverheadHealthBar()
+    {
+        Transform headCanvas = transform.Find("Head/Canvas");
+        if (headCanvas == null)
+        {
+            Transform head = FindChildNamed(transform, "Head");
+            if (head != null) headCanvas = head.GetComponentInChildren<Canvas>(true)?.transform;
+        }
+
+        if (headCanvas == null) return;
+
+        // Deactivate useless elements
+        string[] uselessNames = new string[] {
+            "Voice Particles Left",
+            "Voice Particles Right",
+            "Profile",
+            "Mute Button",
+            "Voice Chat Icon"
+        };
+        foreach (string uName in uselessNames)
+        {
+            Transform uselessObj = FindChildRecursive(headCanvas, uName);
+            if (uselessObj != null) uselessObj.gameObject.SetActive(false);
+        }
+
+        // Look for Health Bar under Layout Group or Canvas
+        Transform healthBarTransform = FindChildRecursive(headCanvas, "Health Bar") ?? FindChildRecursive(headCanvas, "Overhead_HealthBar");
+        if (healthBarTransform != null)
+        {
+            healthBarTransform.gameObject.SetActive(true);
+            Transform fillTransform = FindChildRecursive(healthBarTransform, "Fill");
+            if (fillTransform != null) overheadHealthBarFill = fillTransform.GetComponent<Image>();
+
+            Transform textTransform = FindChildRecursive(healthBarTransform, "HP Text") ?? FindChildRecursive(healthBarTransform, "HP_Text");
+            if (textTransform != null)
+            {
+                overheadHealthBarTMP = textTransform.GetComponent<TMP_Text>();
+                overheadHealthBarText = textTransform.GetComponent<Text>();
+            }
+        }
+        else
+        {
+            // Dynamically construct health bar as fallback
+            Transform layoutGroup = FindChildRecursive(headCanvas, "Layout Group");
+            Transform parentForBar = layoutGroup != null ? layoutGroup : headCanvas;
+
+            GameObject barObj = new GameObject("Overhead_HealthBar", typeof(RectTransform));
+            barObj.transform.SetParent(parentForBar, false);
+            RectTransform barRect = barObj.GetComponent<RectTransform>();
+            barRect.sizeDelta = new Vector2(200f, 26f);
+
+            GameObject bgObj = new GameObject("Bg", typeof(RectTransform), typeof(Image));
+            bgObj.transform.SetParent(barObj.transform, false);
+            RectTransform bgRect = bgObj.GetComponent<RectTransform>();
+            bgRect.anchorMin = Vector2.zero; bgRect.anchorMax = Vector2.one;
+            bgRect.sizeDelta = Vector2.zero;
+            Image bgImg = bgObj.GetComponent<Image>();
+            bgImg.color = new Color(0.08f, 0.1f, 0.14f, 0.9f);
+
+            GameObject fillObj = new GameObject("Fill", typeof(RectTransform), typeof(Image));
+            fillObj.transform.SetParent(bgObj.transform, false);
+            RectTransform fillRect = fillObj.GetComponent<RectTransform>();
+            fillRect.anchorMin = Vector2.zero; fillRect.anchorMax = Vector2.one;
+            fillRect.offsetMin = new Vector2(2, 2); fillRect.offsetMax = new Vector2(-2, -2);
+            fillRect.pivot = new Vector2(0f, 0.5f);
+            overheadHealthBarFill = fillObj.GetComponent<Image>();
+            overheadHealthBarFill.type = Image.Type.Filled;
+            overheadHealthBarFill.fillMethod = Image.FillMethod.Horizontal;
+            overheadHealthBarFill.fillAmount = 1f;
+            overheadHealthBarFill.color = new Color(0.18f, 0.85f, 0.35f);
+
+            GameObject textObj = new GameObject("HP_Text", typeof(RectTransform), typeof(Text));
+            textObj.transform.SetParent(barObj.transform, false);
+            RectTransform textRect = textObj.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero; textRect.anchorMax = Vector2.one;
+            textRect.sizeDelta = Vector2.zero;
+            overheadHealthBarText = textObj.GetComponent<Text>();
+            overheadHealthBarText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            overheadHealthBarText.fontSize = 15;
+            overheadHealthBarText.fontStyle = FontStyle.Bold;
+            overheadHealthBarText.alignment = TextAnchor.MiddleCenter;
+            overheadHealthBarText.color = Color.white;
+        }
+
+        UpdateOverheadHealthBar();
+    }
+
+    private void UpdateOverheadHealthBar()
+    {
+        float fraction = maxHealth > 0 ? Mathf.Clamp01((float)currentHealth.Value / maxHealth) : 0f;
+        Color barColor = Color.Lerp(Color.red, Color.green, fraction);
+
+        if (overheadHealthBarFill != null)
+        {
+            overheadHealthBarFill.fillAmount = fraction;
+            overheadHealthBarFill.color = barColor;
+        }
+        string hpStr = $"{currentHealth.Value} / {maxHealth} HP";
+        if (overheadHealthBarTMP != null) overheadHealthBarTMP.text = hpStr;
+        if (overheadHealthBarText != null) overheadHealthBarText.text = hpStr;
+    }
+
+    private static Transform FindChildRecursive(Transform parent, string name)
+    {
+        if (parent == null) return null;
+        if (parent.name == name) return parent;
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            Transform found = FindChildRecursive(parent.GetChild(i), name);
+            if (found != null) return found;
+        }
+        return null;
     }
 }
