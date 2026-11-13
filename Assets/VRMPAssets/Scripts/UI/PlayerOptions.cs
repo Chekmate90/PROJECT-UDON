@@ -62,6 +62,8 @@ namespace XRMultiplayer
             m_MoveProvider = FindFirstObjectByType<DynamicMoveProvider>();
             m_TurnProvider = FindFirstObjectByType<SnapTurnProvider>();
             m_TunnelingVignetteController = FindFirstObjectByType<UnityEngine.XR.Interaction.Toolkit.Locomotion.Comfort.TunnelingVignetteController>();
+            if (m_TunnelingVignetteController != null)
+                m_TunnelingVignetteController.gameObject.SetActive(false);
 
             XRINetworkGameManager.Connected.Subscribe(ConnectOnline);
             XRINetworkGameManager.ConnectedRoomName.Subscribe(UpdateRoomName);
@@ -301,7 +303,8 @@ namespace XRMultiplayer
 
         public void ToggleTunnelingVignette(bool toggle)
         {
-            m_TunnelingVignetteController.gameObject.SetActive(toggle);
+            if (m_TunnelingVignetteController != null)
+                m_TunnelingVignetteController.gameObject.SetActive(false);
         }
 
         public void ToggleFlight(bool toggle)

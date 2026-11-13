@@ -149,6 +149,12 @@ public class SimpleNetworkUI : MonoBehaviour
             return;
         }
 
+        if (networkManager.IsListening && networkManager.ConnectedClientsIds.Count >= 2)
+        {
+            GUILayout.EndArea();
+            return;
+        }
+
         if (networkManager.IsListening)
         {
             string role = networkManager.IsServer

@@ -166,6 +166,7 @@ public sealed class DesktopPlayerController : NetworkBehaviour
     private void Update()
     {
         if (!IsSpawned || !IsOwner) return;
+        if (PlayerHealth.RoundOver) return;
 
         // Hotkey 'P' to toggle Desktop PC vs VR mode on the fly
         var keyboard = Keyboard.current;

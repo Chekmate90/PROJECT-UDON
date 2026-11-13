@@ -47,6 +47,7 @@ public class PlayerHealth : NetworkBehaviour
     private GameObject deathScreen;
     private Text deathTitle;
     private Text deathDetails;
+    private Button restartRoundButton;
     private Text combatFeedbackText;
     private Coroutine combatFeedbackRoutine;
     private AudioSource combatAudioSource;
@@ -63,7 +64,7 @@ public class PlayerHealth : NetworkBehaviour
     private Transform previousRightHandOrigin;
     private Transform sceneLeftGlove;
     private Transform sceneRightGlove;
-    private bool roundResetScheduled;
+    private static bool roundOver;
     private static bool hasBoxingSpawnCenter;
     private static Vector3 boxingSpawnCenter;
     private static Quaternion boxingSpawnOrientation;
@@ -84,6 +85,7 @@ public class PlayerHealth : NetworkBehaviour
 
     public int MaxHealth => maxHealth;
     public Color PlayerColor => playerColor.Value;
+    public static bool RoundOver => roundOver;
 
     private void Awake()
     {
@@ -110,6 +112,8 @@ public class PlayerHealth : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         EnsureAvatarHierarchyIntegrity();
+        if (ActivePlayers.Count == 0)
+            roundOver = false;
         if (!ActivePlayers.Contains(this)) ActivePlayers.Add(this);
         currentHealth.OnValueChanged += OnHealthChanged;
         playerColor.OnValueChanged += OnPlayerColorChanged;
@@ -566,6 +570,34 @@ public class PlayerHealth : NetworkBehaviour
         Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         deathTitle = CreateDeathText("Result", overlay.transform, font, 54, FontStyle.Bold, new Vector2(0.1f, 0.53f), new Vector2(0.9f, 0.72f));
         deathDetails = CreateDeathText("Criteria", overlay.transform, font, 24, FontStyle.Normal, new Vector2(0.1f, 0.34f), new Vector2(0.9f, 0.52f));
+
+        GameObject restartButtonObject = new GameObject("Restart Round", typeof(RectTransform), typeof(Image), typeof(Button));
+        restartButtonObject.transform.SetParent(overlay.transform, false);
+        RectTransform restartButtonRect = restartButtonObject.GetComponent<RectTransform>();
+        restartButtonRect.anchorMin = new Vector2(0.35f, 0.16f);
+        restartButtonRect.anchorMax = new Vector2(0.65f, 0.27f);
+        restartButtonRect.offsetMin = Vector2.zero;
+        restartButtonRect.offsetMax = Vector2.zero;
+        Image restartButtonImage = restartButtonObject.GetComponent<Image>();
+        restartButtonImage.color = new Color(0.12f, 0.55f, 1f, 1f);
+        restartRoundButton = restartButtonObject.GetComponent<Button>();
+        restartRoundButton.onClick.AddListener(RequestRestartRound);
+
+        GameObject restartLabelObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        restartLabelObject.transform.SetParent(restartButtonObject.transform, false);
+        RectTransform restartLabelRect = restartLabelObject.GetComponent<RectTransform>();
+        restartLabelRect.anchorMin = Vector2.zero;
+        restartLabelRect.anchorMax = Vector2.one;
+        restartLabelRect.offsetMin = Vector2.zero;
+        restartLabelRect.offsetMax = Vector2.zero;
+        Text restartLabel = restartLabelObject.GetComponent<Text>();
+        restartLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        restartLabel.fontSize = 26;
+        restartLabel.fontStyle = FontStyle.Bold;
+        restartLabel.alignment = TextAnchor.MiddleCenter;
+        restartLabel.color = Color.white;
+        restartLabel.text = "RESTART ROUND";
+
         deathScreen.SetActive(false);
     }
 
@@ -600,14 +632,65 @@ public class PlayerHealth : NetworkBehaviour
         if (deathTitle != null) deathTitle.text = defeated ? "KNOCKED OUT" : "YOU WIN";
         if (deathDetails != null)
             deathDetails.text = defeated
-                ? $"Knockout: health reached 0 from valid punches (1.2–5.0 m/s).\nRound restarts in {deathScreenSeconds:0} seconds."
-                : $"Opponent reached 0 health from valid punches.\nRound restarts in {deathScreenSeconds:0} seconds.";
+                ? "Knockout: health reached 0 from a valid punch."
+                : "Opponent reached 0 health from a valid punch.";
+        if (restartRoundButton != null)
+            restartRoundButton.interactable = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
         deathScreen.SetActive(true);
     }
 
     private void HideDeathScreen()
     {
         if (deathScreen != null) deathScreen.SetActive(false);
+    }
+
+    public void RequestRestartRound()
+    {
+        if (!IsOwner || NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening)
+            return;
+
+        RestartRoundServerRpc();
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    private void RestartRoundServerRpc()
+    {
+        if (!IsServer || !roundOver)
+            return;
+
+        foreach (PlayerHealth player in ActivePlayers)
+        {
+            if (player == null || !player.IsSpawned)
+                continue;
+
+            player.currentHealth.Value = player.maxHealth;
+            player.lastHitTimes.Clear();
+            player.attackerComboCounts.Clear();
+        }
+
+        roundOver = false;
+        SetLocomotionEnabled(true);
+        ResetRoundClientRpc();
+    }
+
+    [ClientRpc]
+    private void ResetRoundClientRpc()
+    {
+        roundOver = false;
+        SetLocomotionEnabled(true);
+        if (localPlayer != null)
+        {
+            localPlayer.HideDeathScreen();
+            if (VRBoxingUI.Instance != null)
+                VRBoxingUI.Instance.HideKnockoutAnnouncement();
+        }
+    }
+
+    private static void SetLocomotionEnabled(bool enabled)
+    {
+        var moveProvider = FindFirstObjectByType<UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets.DynamicMoveProvider>();
+        if (moveProvider != null)
+            moveProvider.enabled = enabled;
     }
 
     private static void RefreshHealthHud()
@@ -660,6 +743,11 @@ public class PlayerHealth : NetworkBehaviour
     private void LateUpdate()
     {
         if (!IsSpawned || !IsOwner)
+        {
+            return;
+        }
+
+        if (roundOver)
         {
             return;
         }
@@ -787,6 +875,7 @@ public class PlayerHealth : NetworkBehaviour
         ulong attackerClientId = rpcParams.Receive.SenderClientId;
 
         if (attackerClientId == OwnerClientId) return;
+        if (roundOver) return;
 
         float currentTime = Time.time;
         if (lastHitTimes.TryGetValue(attackerClientId, out float lastHitTime) && currentTime - lastHitTime < hitCooldown)
@@ -832,12 +921,9 @@ public class PlayerHealth : NetworkBehaviour
 
         if (knockedOut)
         {
+            roundOver = true;
+            SetLocomotionEnabled(false);
             TriggerKnockoutClientRpc(OwnerClientId);
-            if (!roundResetScheduled)
-            {
-                roundResetScheduled = true;
-                StartCoroutine(ResetRoundAfterKnockout());
-            }
         }
     }
 
@@ -867,6 +953,8 @@ public class PlayerHealth : NetworkBehaviour
     [ClientRpc]
     private void TriggerKnockoutClientRpc(ulong defeatedClientId)
     {
+        roundOver = true;
+        SetLocomotionEnabled(false);
         PlayCombatOneShot(knockoutClip, 0.95f);
         if (localPlayer != null)
         {
@@ -876,28 +964,6 @@ public class PlayerHealth : NetworkBehaviour
             }
             localPlayer.ShowDeathScreen(localPlayer.OwnerClientId == defeatedClientId);
         }
-    }
-
-    private IEnumerator ResetRoundAfterKnockout()
-    {
-        yield return new WaitForSeconds(deathScreenSeconds);
-
-        foreach (PlayerHealth player in ActivePlayers)
-        {
-            if (player == null || !player.IsSpawned) continue;
-            player.currentHealth.Value = player.maxHealth;
-            player.lastHitTimes.Clear();
-            player.attackerComboCounts.Clear();
-            player.roundResetScheduled = false;
-        }
-
-        ResetDeathScreensClientRpc();
-    }
-
-    [ClientRpc]
-    private void ResetDeathScreensClientRpc()
-    {
-        if (localPlayer != null) localPlayer.HideDeathScreen();
     }
 
     private void ResolveLocalHandSources()

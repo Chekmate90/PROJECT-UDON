@@ -42,7 +42,7 @@ public class VRBoxingUI : MonoBehaviour
     private GameObject knockoutRoot;
     private Text knockoutTitle;
     private Text knockoutSubtitle;
-    private Coroutine knockoutTimerRoutine;
+    private Button knockoutRestartButton;
 
     private bool isSessionActive;
 
@@ -134,19 +134,9 @@ public class VRBoxingUI : MonoBehaviour
         if (nm == null) return;
 
         bool listening = nm.IsListening;
-        if (listening != isSessionActive)
-        {
-            isSessionActive = listening;
-            if (isSessionActive)
-            {
-                // Dock menu up out of view during match
-                if (vrMenuRoot != null) vrMenuRoot.SetActive(false);
-            }
-            else
-            {
-                if (vrMenuRoot != null) vrMenuRoot.SetActive(true);
-            }
-        }
+        isSessionActive = listening;
+        bool matchReady = listening && nm.ConnectedClientsIds.Count >= 2;
+        if (vrMenuRoot != null) vrMenuRoot.SetActive(!matchReady);
 
         if (scoreboardRoot != null && !scoreboardRoot.activeSelf)
         {
@@ -523,9 +513,22 @@ public class VRBoxingUI : MonoBehaviour
         knockoutTitle.rectTransform.sizeDelta = new Vector2(860, 90);
 
         knockoutSubtitle = CreateText("Subtitle", panel.transform, 26, FontStyle.Normal, Color.white);
-        knockoutSubtitle.text = "Restarting round in 5 seconds...";
+        knockoutSubtitle.text = "Press Restart Round to continue.";
         knockoutSubtitle.rectTransform.anchoredPosition = new Vector2(0, -60);
         knockoutSubtitle.rectTransform.sizeDelta = new Vector2(860, 80);
+
+        GameObject restartButton = CreateUIObject("Restart Round", panel.transform);
+        restartButton.transform.localPosition = new Vector3(0f, -125f, 0f);
+        RectTransform restartButtonRect = restartButton.GetComponent<RectTransform>();
+        restartButtonRect.sizeDelta = new Vector2(360f, 70f);
+        Image restartButtonImage = restartButton.AddComponent<Image>();
+        restartButtonImage.color = new Color(0.12f, 0.55f, 1f, 1f);
+        knockoutRestartButton = restartButton.AddComponent<Button>();
+        knockoutRestartButton.onClick.AddListener(RequestRestartRound);
+
+        Text restartLabel = CreateText("Label", restartButton.transform, 26, FontStyle.Bold, Color.white);
+        restartLabel.text = "RESTART ROUND";
+        restartLabel.rectTransform.sizeDelta = restartButtonRect.sizeDelta;
 
         knockoutRoot.SetActive(false);
     }
@@ -559,26 +562,24 @@ public class VRBoxingUI : MonoBehaviour
         }
 
         knockoutRoot.SetActive(true);
-
-        if (knockoutTimerRoutine != null) StopCoroutine(knockoutTimerRoutine);
-        knockoutTimerRoutine = StartCoroutine(KnockoutCountdown(countdownDuration));
     }
 
-    private IEnumerator KnockoutCountdown(float duration)
+    private void RequestRestartRound()
     {
-        float remaining = duration;
-        while (remaining > 0f)
+        foreach (PlayerHealth player in FindObjectsByType<PlayerHealth>(FindObjectsSortMode.None))
         {
-            if (knockoutSubtitle != null)
+            if (player.IsOwner)
             {
-                knockoutSubtitle.text = $"Restarting next round in {Mathf.CeilToInt(remaining)} seconds...";
+                player.RequestRestartRound();
+                return;
             }
-            yield return new WaitForSeconds(0.2f);
-            remaining -= 0.2f;
         }
+    }
 
-        if (knockoutRoot != null) knockoutRoot.SetActive(false);
-        knockoutTimerRoutine = null;
+    public void HideKnockoutAnnouncement()
+    {
+        if (knockoutRoot != null)
+            knockoutRoot.SetActive(false);
     }
 
     #endregion
