@@ -10,11 +10,15 @@ public class GloveHitbox : MonoBehaviour
     private Vector3 previousPosition;
     private float currentPunchSpeed;
     private float lastHitTime = float.NegativeInfinity;
+    private bool isLeftGlove;
 
     private void Awake()
     {
         Collider gloveCollider = GetComponent<Collider>();
-        gloveCollider.isTrigger = true;
+        if (gloveCollider != null)
+        {
+            gloveCollider.isTrigger = true;
+        }
 
         Rigidbody gloveBody = GetComponent<Rigidbody>();
         if (gloveBody == null)
@@ -24,6 +28,9 @@ public class GloveHitbox : MonoBehaviour
 
         gloveBody.isKinematic = true;
         gloveBody.useGravity = false;
+
+        isLeftGlove = gameObject.name.ToLower().Contains("left") ||
+                      (transform.parent != null && transform.parent.name.ToLower().Contains("left"));
     }
 
     private void Start()
@@ -39,7 +46,6 @@ public class GloveHitbox : MonoBehaviour
             currentPunchSpeed = (transform.position - previousPosition).magnitude / Time.deltaTime;
         }
         previousPosition = transform.position;
-
     }
 
     private void OnTriggerEnter(Collider other)
@@ -53,6 +59,8 @@ public class GloveHitbox : MonoBehaviour
                 return;
             }
 
+            VRHaptics.TriggerPunchImpulse(isLeftGlove, currentPunchSpeed);
+            PlayLocalPunchSound();
             testDummy.RegisterPunch(currentPunchSpeed);
             return;
         }
@@ -80,6 +88,27 @@ public class GloveHitbox : MonoBehaviour
         }
 
         lastHitTime = Time.time;
+        VRHaptics.TriggerPunchImpulse(isLeftGlove, currentPunchSpeed);
+        PlayLocalPunchSound();
         targetHealth.ReportPunchAttemptServerRpc(currentPunchSpeed);
+    }
+
+    private void PlayLocalPunchSound()
+    {
+        AudioSource audio = GetComponent<AudioSource>();
+        if (audio == null)
+        {
+            audio = gameObject.AddComponent<AudioSource>();
+            audio.spatialBlend = 0.15f;
+            audio.minDistance = 2.5f;
+            audio.maxDistance = 25f;
+            audio.playOnAwake = false;
+        }
+
+        AudioClip clip = Resources.Load<AudioClip>("BoxingAudio/PunchHeavy");
+        if (clip != null && audio != null)
+        {
+            audio.PlayOneShot(clip, 1.0f);
+        }
     }
 }

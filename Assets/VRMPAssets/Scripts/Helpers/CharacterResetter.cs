@@ -57,6 +57,8 @@ namespace XRMultiplayer
 
         void ResetPlayer(Vector3 destination)
         {
+            if (m_TeleportationProvider == null) return;
+
             TeleportRequest teleportRequest = new()
             {
                 destinationPosition = destination,

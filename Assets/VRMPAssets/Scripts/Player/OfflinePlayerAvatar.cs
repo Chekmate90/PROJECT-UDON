@@ -114,12 +114,14 @@ namespace XRMultiplayer
         /// <inheritdoc/>
         private void LateUpdate()
         {
+            if (m_HeadTransform == null || m_HeadOrigin == null) return;
             m_HeadTransform.SetPositionAndRotation(m_HeadOrigin.position, m_HeadOrigin.rotation);
         }
 
         /// <inheritdoc/>
         void Update()
         {
+            if (m_HeadRend == null) return;
             if (!s_Muted)
             {
                 m_MicLoudness = LevelMax();

@@ -63,6 +63,8 @@ namespace XRMultiplayer
         /// <inheritdoc/>
         private void Update()
         {
+            if (m_HeadVisualsRoot == null || m_HeadTransform == null || m_Neck == null || m_TorsoParentTransform == null) return;
+
             // Update Head.
             m_HeadVisualsRoot.position = m_HeadTransform.position;
             m_HeadVisualsRoot.position -= m_HeadTransform.up * m_HeadHeightOffset;

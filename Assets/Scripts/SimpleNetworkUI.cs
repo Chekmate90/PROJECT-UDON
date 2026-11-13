@@ -66,8 +66,11 @@ public class SimpleNetworkUI : MonoBehaviour
             return;
         }
 
-        transport.SetConnectionData("0.0.0.0", connectionPort);
-        SetStatus($"Starting Host on port {connectionPort}...");
+        // Accept connections from both Localhost and LAN
+        networkManager.NetworkConfig.ForceSamePrefabs = false;
+        string lanIp = GetLocalIPv4();
+        transport.SetConnectionData(lanIp, connectionPort, "0.0.0.0");
+        SetStatus($"Starting Host on 0.0.0.0:{connectionPort} (LAN: {lanIp})...");
 
         if (!networkManager.StartHost())
         {
@@ -77,14 +80,26 @@ public class SimpleNetworkUI : MonoBehaviour
 
     public void StartClientGame()
     {
+        StartClientGame(null);
+    }
+
+    public void StartClientGame(string customIp = null)
+    {
         if (!TryGetNetworkManager(out NetworkManager networkManager))
         {
             return;
         }
 
-        string ipToConnect = (ipInputField != null && !string.IsNullOrEmpty(ipInputField.text))
-            ? ipInputField.text
-            : targetIpAddress;
+        string ipToConnect = !string.IsNullOrEmpty(customIp)
+            ? customIp
+            : ((ipInputField != null && !string.IsNullOrEmpty(ipInputField.text))
+                ? ipInputField.text
+                : targetIpAddress);
+
+        if (string.IsNullOrEmpty(ipToConnect))
+        {
+            ipToConnect = "127.0.0.1";
+        }
 
         UnityTransport transport = networkManager.GetComponent<UnityTransport>();
         if (transport == null)
@@ -93,6 +108,7 @@ public class SimpleNetworkUI : MonoBehaviour
             return;
         }
 
+        networkManager.NetworkConfig.ForceSamePrefabs = false;
         transport.SetConnectionData(ipToConnect, connectionPort);
         SetStatus($"Connecting to {ipToConnect}:{connectionPort}...");
 
@@ -102,11 +118,26 @@ public class SimpleNetworkUI : MonoBehaviour
         }
     }
 
+    public static string GetLocalIPv4()
+    {
+        try
+        {
+            using (var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, 0))
+            {
+                socket.Connect("8.8.8.8", 65530);
+                var endPoint = socket.LocalEndPoint as System.Net.IPEndPoint;
+                if (endPoint != null) return endPoint.Address.ToString();
+            }
+        }
+        catch { }
+        return "127.0.0.1";
+    }
+
     private void OnGUI()
     {
         EnsureStyles();
-        GUILayout.BeginArea(new Rect(20, 20, 300, 220), panelStyle);
-        GUILayout.Label("LAN BOXING", titleStyle);
+        GUILayout.BeginArea(new Rect(20, 20, 320, 280), panelStyle);
+        GUILayout.Label("LAN BOXING MULTIPLAYER", titleStyle);
         GUILayout.Space(4f);
         GUILayout.Label(connectionStatus, statusStyle, GUILayout.MinHeight(34));
 
@@ -127,21 +158,42 @@ public class SimpleNetworkUI : MonoBehaviour
             GUILayout.Space(8f);
             GUILayout.Label($"SESSION   {role}", labelStyle);
             GUILayout.Label($"PLAYERS   {connectedPlayers}", labelStyle);
+            if (networkManager.IsServer)
+            {
+                GUILayout.Label($"LAN IP:   {GetLocalIPv4()}:{connectionPort}", labelStyle);
+                GUILayout.Label($"LOCAL:    127.0.0.1:{connectionPort}", labelStyle);
+            }
         }
         else
         {
-            GUILayout.Label("HOST IP ADDRESS", labelStyle);
-            targetIpAddress = GUILayout.TextField(targetIpAddress, GUILayout.Height(30));
-            GUILayout.Space(8f);
+            string lanIp = GetLocalIPv4();
 
-            if (GUILayout.Button("Start Host", buttonStyle, GUILayout.Height(34)))
+            if (GUILayout.Button("Start Host (LAN & Local)", buttonStyle, GUILayout.Height(32)))
             {
                 StartHostGame();
             }
 
-            if (GUILayout.Button("Join Game", buttonStyle, GUILayout.Height(34)))
+            GUILayout.Space(4f);
+            if (GUILayout.Button("Join Localhost (127.0.0.1)", buttonStyle, GUILayout.Height(28)))
             {
-                StartClientGame();
+                StartClientGame("127.0.0.1");
+            }
+
+            if (lanIp != "127.0.0.1")
+            {
+                GUILayout.Space(2f);
+                if (GUILayout.Button($"Join LAN ({lanIp})", buttonStyle, GUILayout.Height(28)))
+                {
+                    StartClientGame(lanIp);
+                }
+            }
+
+            GUILayout.Space(6f);
+            GUILayout.Label("CUSTOM IP ADDRESS", labelStyle);
+            targetIpAddress = GUILayout.TextField(targetIpAddress, GUILayout.Height(24));
+            if (GUILayout.Button("Join Custom IP", buttonStyle, GUILayout.Height(26)))
+            {
+                StartClientGame(targetIpAddress);
             }
         }
 
@@ -255,9 +307,13 @@ public class SimpleNetworkUI : MonoBehaviour
     private void OnClientDisconnected(ulong clientId)
     {
         NetworkManager networkManager = subscribedNetworkManager;
+        string reason = networkManager != null && !string.IsNullOrEmpty(networkManager.DisconnectReason)
+            ? $" (Reason: {networkManager.DisconnectReason})"
+            : string.Empty;
+
         string message = networkManager != null && clientId == networkManager.LocalClientId
-            ? "DISCONNECTED from session"
-            : $"Client {clientId} disconnected";
+            ? $"DISCONNECTED from session{reason}"
+            : $"Client {clientId} disconnected{reason}";
         SetStatus(message);
     }
 
